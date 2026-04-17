@@ -1,0 +1,18 @@
+#!/bin/bash
+set -euo pipefail
+
+sudo apt-get update -qq
+
+sudo apt-get install -y \
+    pandoc \
+    texlive-xetex \
+    texlive-latex-recommended \
+    texlive-latex-extra \
+    texlive-fonts-recommended \
+    texlive-fonts-extra \
+    fonts-ebgaramond
+
+python3 -m pip install --upgrade pip
+python3 -m pip install python-docx
+
+git config --global --add safe.directory "$PWD"

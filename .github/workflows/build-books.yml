@@ -1,0 +1,59 @@
+name: Build Books
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Fetch the scripts submodule if the shared-scripts approach is used.
+          # Remove this line if using the monorepo layout instead.
+          submodules: true
+
+      - name: Install Pandoc
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y pandoc
+
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install python-docx
+
+      # ── Scripture books ──────────────────────────────────────────────────
+      - name: Build Volume 1
+        working-directory: book1
+        run: bash ../scripts/docx.sh
+
+      - name: Build Volume 2
+        working-directory: book2
+        run: bash ../scripts/docx.sh
+
+      # ── Counseling book ──────────────────────────────────────────────────
+      - name: Build Counseling Book
+        working-directory: counseling
+        run: bash ../scripts/docx.sh
+
+      # ── Upload artifacts ─────────────────────────────────────────────────
+      - name: Upload Scripture artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: what-scripture-says
+          path: |
+            book1/what-scripture-says-vol1.docx
+            book2/what-scripture-says-vol2.docx
+          retention-days: 90
+
+      - name: Upload Counseling artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: counseling-book
+          path: counseling/counseling-book.docx
+          retention-days: 90

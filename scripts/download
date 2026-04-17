@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ARTIFACT_NAME="what-scripture-says"
+OUT_DIR="artifacts"
+
+# Remove the directory entirely if it exists
+rm -rf "$OUT_DIR"
+
+# Recreate it clean
+mkdir -p "$OUT_DIR"
+
+# Download and extract artifact
+gh run download --name "$ARTIFACT_NAME" --dir "$OUT_DIR"
+
+# Flatten DOCX files
+find "$OUT_DIR" -type f -name "*.docx" -exec mv -t "$OUT_DIR" {} +
+
+# Remove empty directories
+find "$OUT_DIR" -mindepth 1 -type d -empty -delete
+
+# Convert each DOCX to PDF
+for docx in "$OUT_DIR"/*.docx; do
+  [[ -e "$docx" ]] || continue  # handle no matches safely
+
+  echo "Converting: $docx"
+  bash scripts/docx2pdf.sh "$docx"
+done
+
+echo "Done. Files in $OUT_DIR:"
+ls -1 "$OUT_DIR"

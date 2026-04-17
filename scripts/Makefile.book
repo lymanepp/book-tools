@@ -1,0 +1,67 @@
+# Makefile — per-book build targets for PDF, EPUB, and SSML outputs.
+#
+# Run from a book directory:
+#   cd book1/ && make          # build everything
+#   cd book1/ && make build-pdf
+#   cd book1/ && make build-epub
+#   cd book1/ && make clean
+#
+# DOCX is intentionally excluded from this Makefile because it requires
+# a two-stage build (pandoc → postprocess-pandoc.py) driven by docx.sh,
+# which also regenerates the reference template.  Run it separately:
+#   cd book1/ && bash ../scripts/docx.sh
+
+SCRIPTS_DIR := ../scripts
+-include book.env
+export
+
+OUTPUT_DIR_PDF  := pdf
+OUTPUT_DIR_EPUB := epub
+OUTPUT_DIR_SSML := ssml
+
+MD_FILES  := $(sort $(wildcard [0-9][0-9]-*.md))
+PDF_FILES  := $(patsubst %.md, $(OUTPUT_DIR_PDF)/%.pdf,   $(MD_FILES))
+EPUB_FILES := $(patsubst %.md, $(OUTPUT_DIR_EPUB)/%.epub, $(MD_FILES))
+SSML_FILES := $(patsubst %.md, $(OUTPUT_DIR_SSML)/%.ssml, $(MD_FILES))
+
+.PHONY: all build-pdf build-epub build-ssml clean
+
+all: build-pdf build-epub build-ssml
+
+build-pdf:  $(PDF_FILES)
+build-epub: $(EPUB_FILES)
+build-ssml: $(SSML_FILES)
+
+$(OUTPUT_DIR_PDF) $(OUTPUT_DIR_EPUB) $(OUTPUT_DIR_SSML):
+	mkdir -p $@
+
+# Per-chapter PDF (xelatex) — for proofing individual chapters.
+# Full-book PDF is produced via Word → PDF after the DOCX build.
+$(OUTPUT_DIR_PDF)/%.pdf: %.md | $(OUTPUT_DIR_PDF)
+	pandoc "$<" -o "$@" \
+		--pdf-engine=xelatex \
+		--include-in-header=header.tex \
+		--metadata-file=metadata-print.yaml \
+		--lua-filter=$(SCRIPTS_DIR)/mdformat.lua
+
+# Full-book EPUB
+build-epub-book:
+	bash $(SCRIPTS_DIR)/epub.sh
+
+# Per-chapter EPUB fallback
+$(OUTPUT_DIR_EPUB)/%.epub: %.md | $(OUTPUT_DIR_EPUB)
+	pandoc "$<" -o "$@" \
+		--toc \
+		--metadata-file=metadata-submission.yaml \
+		--lua-filter=$(SCRIPTS_DIR)/mdformat.lua
+
+# SSML (speech synthesis markup — for TTS/audiobook pre-processing)
+$(OUTPUT_DIR_SSML)/%.ssml: %.md | $(OUTPUT_DIR_SSML)
+	pandoc "$<" -o "$@" \
+		--from=gfm \
+		--to=html \
+		--wrap=none \
+		--lua-filter=$(SCRIPTS_DIR)/md2ssml.lua
+
+clean:
+	rm -f $(PDF_FILES) $(EPUB_FILES) $(SSML_FILES)

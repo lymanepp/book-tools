@@ -1,0 +1,21 @@
+{
+	"name": "Book Publisher Container",
+	"image": "mcr.microsoft.com/devcontainers/python:3.13-trixie",
+	"customizations": {
+		"vscode": {
+			"settings": {
+				"terminal.integrated.shell.linux": "/bin/bash"
+			},
+			"extensions": [
+				"DavidAnson.vscode-markdownlint",
+				"esbenp.prettier-vscode",
+				"GitHub.copilot",
+				"github.vscode-github-actions",
+				"ms-python.python",
+				"GitHub.vscode-pull-request-github"
+			]
+		}
+	},
+	"postCreateCommand": ".devcontainer/post-create",
+	"remoteUser": "vscode"
+}
