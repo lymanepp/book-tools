@@ -614,8 +614,11 @@ def configure_paragraph_styles(doc: Document, cfg: BookConfig) -> None:
 # ---------------------------------------------------------------------------
 
 def configure_lists(doc: Document, cfg: BookConfig) -> None:
-    s = style_by_id(doc, "ListParagraph")
-    clear_style_formatting(s)
+    # Use ensure_style rather than style_by_id: pandoc stores "List Paragraph"
+    # under different styleIds across versions ("ListParagraph" vs the spaced
+    # form). ensure_style strips spaces to form the lookup key, finds the
+    # existing style under either convention, and creates it if absent.
+    s = ensure_style(doc, "List Paragraph", WD_STYLE_TYPE.PARAGRAPH)
     set_font(s, name=cfg.body_font, size_pt=cfg.body_size, color=_DARK)
     pf = s.paragraph_format
     pf.space_before      = Pt(2)
