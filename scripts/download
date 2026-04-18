@@ -2,25 +2,37 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-ARTIFACT_NAME="what-scripture-says"
-OUT_DIR="$SCRIPT_DIR/artifacts"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
+OUT_DIR="${SCRIPT_DIR}/artifacts"
 
-# Remove the directory entirely if it exists
+artifact_name="${1:-}"
+
+# Resolve from repo.yml if not provided
+if [[ -z "$artifact_name" ]]; then
+  if [[ -f "${REPO_ROOT}/repo.yml" ]]; then
+    artifact_name="$(grep -E '^artifact_basename:' "${REPO_ROOT}/repo.yml" | awk '{print $2}')"
+  fi
+fi
+
+# Final validation
+if [[ -z "${artifact_name:-}" ]]; then
+  echo "ERROR: Artifact name not provided and not found in repo.yml" >&2
+  echo "Usage: $0 <artifact-name>" >&2
+  exit 1
+fi
+
 rm -rf "$OUT_DIR"
-
-# Recreate it clean
 mkdir -p "$OUT_DIR"
 
-# Download and extract artifact
-gh run download --name "$ARTIFACT_NAME" --dir "$OUT_DIR"
+echo "Downloading artifact: $artifact_name"
 
-# Flatten DOCX files
+gh run download --name "$artifact_name" --dir "$OUT_DIR"
+
+# Flatten directory structure
 find "$OUT_DIR" -type f -name "*.docx" -exec mv -t "$OUT_DIR" {} +
-
-# Remove empty directories
 find "$OUT_DIR" -mindepth 1 -type d -empty -delete
 
-# Convert each DOCX to PDF
+# Convert to PDF
 shopt -s nullglob
 for docx in "$OUT_DIR"/*.docx; do
   echo "Converting: $docx"
