@@ -178,11 +178,13 @@
   // Native Pandoc footnotes stay native. This styles only the footnote area.
   // No first-line, hanging, or footnote-entry indentation is applied inside notes.
   set footnote.entry(indent: 0pt, gap: 0.45em)
+  set footnote(numbering: n => super(typographic: false, text(size: 8.5pt, str(n))))
   show footnote.entry: it => {
+    set footnote(numbering: n => super(typographic: false, text(size: 8.5pt, str(n))))
     set text(font: _body-font, size: _fn-size, lang: "en", hyphenate: _hyphenate)
     set par(
       justify: true,
-      leading: 1.7pt,
+      leading: 5.0pt,
       spacing: 0pt,
       first-line-indent: (amount: 0pt, all: true),
       hanging-indent: 0pt,
