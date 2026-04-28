@@ -16,7 +16,7 @@
 
 // Typography
 #let _body-font     = "TeX Gyre Pagella"
-#let _mono-font     = "Courier New"
+#let _mono-font     = "TeX Gyre Cursor"
 #let _body-size     = 11pt
 #let _fn-size       = 9pt
 #let _hdr-size      = 9pt
@@ -24,6 +24,7 @@
 #let _ch-title-size = 18pt
 #let _h2-size       = 13pt
 #let _h3-size       = 11.5pt
+#let _hyphenate     = false
 
 // Page geometry
 #let _page-width  = 6in
@@ -37,13 +38,16 @@
 #let _leading        = 7.5pt
 #let _para-spacing   = 0pt
 #let _indent         = 0.25in
-#let _quote-indent   = 0.50in
+#let _quote-indent   = 0.375in
 #let _quote-before   = 4.5pt
 #let _quote-after    = 4.5pt
+#let _list-spacing   = 0.45em
+#let _list-before    = 12pt
+#let _list-after     = 12pt
 #let _heading-keep   = 2.15em
 #let _chapter-top-space    = 0.82in
 #let _chapter-number-after = 0.32in
-#let _chapter-title-after  = 0.22in
+#let _chapter-title-after  = 0.16in
 
 #let _book-title = "What Scripture Says, Volume 2"
 #let _ch-title   = state("book-current-chapter-title", "")
@@ -72,7 +76,15 @@
 #let _plain-par() = _noindent-par(justify: false)
 
 #let _reset-book-text(size: _body-size) = {
-  set text(font: _body-font, size: size, lang: "en", hyphenate: true)
+  set text(font: _body-font, size: size, lang: "en", hyphenate: _hyphenate)
+}
+
+#let _book-text(body, size: _body-size, weight: "regular", style: "normal") = {
+  text(font: _body-font, size: size, weight: weight, style: style, lang: "en", hyphenate: _hyphenate)[#body]
+}
+
+#let _mono-text(body, size: 9pt) = {
+  text(font: _mono-font, size: size, lang: "en", hyphenate: false)[#body]
 }
 
 #let setup(doc, title: "") = {
@@ -126,22 +138,40 @@
   // paragraph is the first paragraph after a heading.
 
   // Lists must inherit body typography and use normal book text, not a fallback font.
-  set list(indent: 0.28in, body-indent: 0.16in, spacing: 0.20em)
-  set enum(indent: 0.28in, body-indent: 0.16in, spacing: 0.20em)
+  // The item spacing is deliberately a little larger than Typst's compact default
+  // so numbered and bulleted lists read with the same visual rhythm as body text.
+  set list(indent: 0.28in, body-indent: 0.16in, spacing: _list-spacing)
+  set enum(indent: 0.28in, body-indent: 0.16in, spacing: _list-spacing)
   show list: it => {
-    v(3pt, weak: false)
-    _reset-book-text()
-    _body-par()
-    it
-    v(3pt, weak: false)
+    v(_list-before, weak: true)
+    block(width: 100%)[
+      #_reset-book-text()
+      #set par(
+        justify: true,
+        leading: _leading,
+        spacing: 0pt,
+        first-line-indent: (amount: 0pt, all: true),
+        hanging-indent: 0pt,
+      )
+      #_book-text(it)
+    ]
+    v(_list-after, weak: true)
     _noind.update(true)
   }
   show enum: it => {
-    v(3pt, weak: false)
-    _reset-book-text()
-    _body-par()
-    it
-    v(3pt, weak: false)
+    v(_list-before, weak: true)
+    block(width: 100%)[
+      #_reset-book-text()
+      #set par(
+        justify: true,
+        leading: _leading,
+        spacing: 0pt,
+        first-line-indent: (amount: 0pt, all: true),
+        hanging-indent: 0pt,
+      )
+      #_book-text(it)
+    ]
+    v(_list-after, weak: true)
     _noind.update(true)
   }
 
@@ -149,7 +179,7 @@
   // No first-line, hanging, or footnote-entry indentation is applied inside notes.
   set footnote.entry(indent: 0pt, gap: 0.45em)
   show footnote.entry: it => {
-    set text(font: _body-font, size: _fn-size, lang: "en", hyphenate: true)
+    set text(font: _body-font, size: _fn-size, lang: "en", hyphenate: _hyphenate)
     set par(
       justify: true,
       leading: 1.7pt,
@@ -157,7 +187,7 @@
       first-line-indent: (amount: 0pt, all: true),
       hanging-indent: 0pt,
     )
-    it
+    _book-text(it, size: _fn-size)
   }
 
   // chapter() emits an invisible heading(outlined: true) so that outline()
@@ -325,7 +355,7 @@
   block(breakable: false, sticky: true)[
     #_reset-book-text()
     #_noindent-par(justify: true)
-    #body
+    #_book-text(body)
     #v(3pt, weak: true)
   ]
   _noind.update(true)
@@ -335,7 +365,7 @@
   block[
     #_reset-book-text()
     #_noindent-par(justify: true)
-    #strong[#label] #body
+    #_book-text([#strong[#label] #body])
   ]
 }
 
@@ -343,7 +373,7 @@
 #let quote(body) = {
   v(_quote-before)
   block(width: 100%, inset: (left: _quote-indent, right: 0pt, top: 0pt, bottom: 0pt), breakable: true)[
-    #set text(font: _body-font, size: _body-size, style: "normal", lang: "en", hyphenate: true)
+    #set text(font: _body-font, size: _body-size, style: "normal", lang: "en", hyphenate: _hyphenate)
     #set par(
       justify: false,
       leading: _leading,
@@ -351,7 +381,7 @@
       first-line-indent: (amount: 0pt, all: true),
       hanging-indent: 0pt,
     )
-    #body
+    #_book-text(body)
   ]
   v(_quote-after)
 }
@@ -371,7 +401,7 @@
   block[
     #_reset-book-text()
     #set par(first-line-indent: (amount: 0pt, all: true), spacing: 0pt)
-    #body
+    #_book-text(body)
   ]
   v(5pt, weak: true)
   _noind.update(true)
@@ -384,7 +414,7 @@
   block(fill: luma(245), inset: 8pt, radius: 3pt, width: 100%)[
     #set text(font: _mono-font, size: 9pt)
     #set par(first-line-indent: (amount: 0pt, all: true), justify: false, spacing: 0pt)
-    #if language != "" { _b-raw(body, lang: language) } else { _b-raw(body) }
+    #_mono-text(if language != "" { _b-raw(body, lang: language) } else { _b-raw(body) })
   ]
   v(6pt, weak: true)
   _noind.update(true)
@@ -397,10 +427,10 @@
   // If there is not enough space remaining, Typst moves the whole table.
   block(width: 100%, breakable: false)[
     #_reset-book-text(size: 9.6pt)
-    #set par(justify: false, leading: 2.0pt, spacing: 0pt, first-line-indent: (amount: 0pt, all: true))
+    #set par(justify: false, leading: 2.4pt, spacing: 0pt, first-line-indent: (amount: 0pt, all: true))
     // Keep the table in an unbreakable container. The outer block controls
     // vertical layout; the inner box prevents the table itself from splitting.
-    #box(width: 100%)[#body]
+    #box(width: 100%)[#_book-text(body, size: 9.6pt)]
   ]
   v(8pt, weak: true)
   _noind.update(true)
@@ -408,22 +438,22 @@
 
 #let table_cell(body, head: false) = {
   if head {
-    table.cell(fill: luma(92%), inset: (x: 5pt, y: 3.5pt), align: left + horizon)[
-      #set text(font: _body-font, size: 9.6pt, weight: "bold", lang: "en", hyphenate: true)
-      #set par(justify: false, leading: 1.8pt, spacing: 0pt, first-line-indent: (amount: 0pt, all: true))
-      #body
+    table.cell(fill: luma(92%), inset: (x: 5.5pt, y: 4pt), align: left + horizon)[
+      #set text(font: _body-font, size: 9.6pt, weight: "bold", lang: "en", hyphenate: _hyphenate)
+      #set par(justify: false, leading: 2.2pt, spacing: 0pt, first-line-indent: (amount: 0pt, all: true))
+      #_book-text(body, size: 9.6pt, weight: "bold")
     ]
   } else {
-    table.cell(inset: (x: 5pt, y: 3.5pt), align: left + horizon)[
-      #set text(font: _body-font, size: 9.6pt, lang: "en", hyphenate: true)
-      #set par(justify: false, leading: 1.8pt, spacing: 0pt, first-line-indent: (amount: 0pt, all: true))
-      #body
+    table.cell(inset: (x: 5.5pt, y: 4pt), align: left + horizon)[
+      #set text(font: _body-font, size: 9.6pt, lang: "en", hyphenate: _hyphenate)
+      #set par(justify: false, leading: 2.2pt, spacing: 0pt, first-line-indent: (amount: 0pt, all: true))
+      #_book-text(body, size: 9.6pt)
     ]
   }
 }
 
 // ── Figure / Div ─────────────────────────────────────────────────────────────
-#let figure(body) = { v(8pt, weak: true); align(center)[#body]; v(8pt, weak: true); _noind.update(true) }
+#let figure(body) = { v(8pt, weak: true); align(center)[#_book-text(body)]; v(8pt, weak: true); _noind.update(true) }
 #let div(body, classes: "") = body
 
 // ── Explicit paragraph wrapper ──────────────────────────────────────────────
@@ -438,7 +468,7 @@
       hanging-indent: 0pt,
     )
     #if kind == "normal" { h(_indent) }
-    #body
+    #_book-text(body)
   ]
 }
 
@@ -449,7 +479,7 @@
 #let item(body) = body
 #let deflist(body) = body
 #let defterm(body) = { strong(body) }
-#let defitem(body) = { pad(left: _indent)[#body] }
+#let defitem(body) = { pad(left: _indent)[#_book-text(body)] }
 #let thead(body) = body
 #let tbody(body) = body
 #let row(body) = body
@@ -466,8 +496,7 @@
   if kind == "single" { [‘#body’] } else { [“#body”] }
 }
 #let code(body) = {
-  set text(font: _mono-font, size: 0.9em)
-  _b-raw(body)
+  _mono-text(_b-raw(body), size: 0.9em)
 }
 #let link(body, url: "") = _b-link(url)[#body]
 #let image(src: "", alt: "") = _b-image(src, alt: alt)

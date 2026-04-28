@@ -103,6 +103,10 @@ for chapter in "${CHAPTERS[@]}"; do
   cat "$file" >> "$COMBINED_MD"
   printf '\n\n' >> "$COMBINED_MD"
 done
+# Remove invisible Unicode format/control characters that can surface as
+# visible PDF text-extraction or print artifacts after line breaking.
+perl -CSD -0pi -e 's/[\x{FEFF}\x{00AD}\x{FFFE}\x{FFFF}]//g' "$COMBINED_MD"
+
 
 cp "$BOOK_TYP_SRC" "$BUILD_DIR/book.typ"
 
