@@ -75,8 +75,8 @@
   set text(font: _body-font, size: size, lang: "en", hyphenate: true)
 }
 
-#let setup(doc) = {
-  set document(title: _book-title)
+#let setup(doc, title: "") = {
+  set document(title: if title != "" { title } else { _book-title })
 
   set page(
     width: _page-width,
@@ -129,19 +129,19 @@
   set list(indent: 0.28in, body-indent: 0.16in, spacing: 0.20em)
   set enum(indent: 0.28in, body-indent: 0.16in, spacing: 0.20em)
   show list: it => {
-    v(5pt, weak: true)
+    v(3pt, weak: false)
     _reset-book-text()
     _body-par()
     it
-    v(5pt, weak: true)
+    v(3pt, weak: false)
     _noind.update(true)
   }
   show enum: it => {
-    v(5pt, weak: true)
+    v(3pt, weak: false)
     _reset-book-text()
     _body-par()
     it
-    v(5pt, weak: true)
+    v(3pt, weak: false)
     _noind.update(true)
   }
 
@@ -159,6 +159,11 @@
     )
     it
   }
+
+  // chapter() emits an invisible heading(outlined: true) so that outline()
+  // can collect chapter titles and page numbers for the TOC. The show rule
+  // suppresses all visual rendering of those headings.
+  show heading: it => none
 
   doc
 }
@@ -188,8 +193,12 @@
     _plain-par()
     align(center)[#title]
   }
-  v(_chapter-title-after)
+  // Emit an invisible level-1 heading so outline() can build the TOC.
+  // numbering is set so outline.entry can render "N.   Title" format.
+  // The show heading: none rule in setup() suppresses visual rendering.
+  heading(level: 1, outlined: true, numbering: "1.")[#title]
 
+  v(_chapter-title-after)
   // Clear suppression so the second page of each chapter gets its running head.
   _suppress.update(false)
   _noind.update(true)
@@ -206,9 +215,94 @@
     _plain-par()
     align(center)[#title]
   }
+  heading(level: 1, outlined: true)[#title]
   v(_chapter-title-after)
   _suppress.update(false)
   _noind.update(true)
+}
+
+// ── Front matter (title page + copyright + TOC) ──────────────────────────────
+// SUPERSEDED for print builds: pdf-typst.sh now #include's each book's
+// front-matter-print.typ directly, which gives per-book control over layout,
+// ISBNs, and page structure while keeping the auto-generated outline() TOC.
+// This function is retained for standalone/submission builds that do not have
+// a front-matter-print.typ, and as a fallback for new books.
+#let front_matter(
+  title: "",
+  subtitle: "",
+  author: "",
+  copyright_year: "",
+  hardcover_isbn: "",
+  paperback_isbn: "",
+) = {
+  // ── Title page (recto) ──
+  _suppress.update(true)
+  context { _chapter_open_page.update(counter(page).get().first()) }
+  v(1.8in)
+  {
+    set text(font: _body-font, size: _ch-title-size, weight: "bold")
+    _plain-par()
+    align(center)[#title]
+  }
+  if subtitle != "" {
+    v(0.18in)
+    set text(font: _body-font, size: _h2-size, weight: "regular", style: "italic")
+    _plain-par()
+    align(center)[#subtitle]
+  }
+  v(0.40in)
+  {
+    set text(font: _body-font, size: _body-size)
+    _plain-par()
+    align(center)[#author]
+  }
+
+  // ── Copyright page (verso) ──
+  pagebreak(to: "even")
+  _suppress.update(true)
+  context { _chapter_open_page.update(counter(page).get().first()) }
+  v(1fr)
+  {
+    set text(font: _body-font, size: _fn-size)
+    set par(justify: false, leading: 5pt, spacing: 4pt,
+            first-line-indent: (amount: 0pt, all: true))
+    [*#title*]
+    if subtitle != "" { linebreak(); _b-emph[#subtitle] }
+    v(6pt)
+    [© #copyright_year #author]
+    v(2pt)
+    [All rights reserved.]
+    v(6pt)
+    [No part of this publication may be reproduced, stored in a retrieval system, or transmitted in any form or by any means—electronic, mechanical, photocopying, recording, or otherwise—without the prior written permission of the author, except for brief quotations used in reviews or scholarly works.]
+    v(6pt)
+    [Scripture quotations are from the ESV® Bible (The Holy Bible, English Standard Version®), copyright © 2001 by Crossway, a publishing ministry of Good News Publishers. Used by permission. All rights reserved.]
+    if hardcover_isbn != "" { v(6pt); [ISBN: #hardcover_isbn (hardcover)] }
+    if paperback_isbn != "" { linebreak(); [ISBN: #paperback_isbn (paperback)] }
+    v(4pt)
+    [Printed in the United States of America.]
+  }
+
+  // ── Table of contents (recto) ──
+  pagebreak(to: "odd")
+  _suppress.update(true)
+  context { _chapter_open_page.update(counter(page).get().first()) }
+  v(0.60in)
+  {
+    set text(font: _body-font, size: _h2-size, weight: "bold")
+    _plain-par()
+    align(center)[Contents]
+  }
+  v(0.30in)
+  {
+    set text(font: _body-font, size: _body-size)
+    set par(justify: false, leading: _leading, spacing: 4pt,
+            first-line-indent: (amount: 0pt, all: true))
+    outline(title: none, indent: 0pt, depth: 1)
+  }
+
+  // Body begins on next recto; _suppress cleared by the first chapter() call.
+  pagebreak(to: "odd")
+  _suppress.update(true)
 }
 
 #let _kept-heading(title, size: _body-size, italic: false, before: 12pt, after: 5pt) = {

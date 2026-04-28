@@ -114,19 +114,32 @@ WSS_SUPPRESS_TYPST_PREAMBLE=1 pandoc \
   -o "$BODY_TYP" \
   "$COMBINED_MD"
 
+FRONT_MATTER_SRC="$BOOK_DIR/front-matter-print.typ"
+FRONT_MATTER_BUILD="$BUILD_DIR/front-matter-print.typ"
+
 {
   printf '#import "book.typ" as book\n'
   printf '#show: book.setup.with(title: "%s")\n\n' "$(typst_escape "$BOOK_TITLE")"
 
   if [[ "$MODE" == "print" ]]; then
-    printf '#book.front_matter(\n'
-    printf '  title: "%s",\n' "$(typst_escape "$BOOK_TITLE")"
-    printf '  subtitle: "%s",\n' "$(typst_escape "$BOOK_SUBTITLE")"
-    printf '  author: "%s",\n' "$(typst_escape "$BOOK_AUTHOR")"
-    printf '  copyright_year: "%s",\n' "$(typst_escape "$BOOK_COPYRIGHT_YEAR")"
-    printf '  hardcover_isbn: "%s",\n' "$(typst_escape "$BOOK_HARDCOVER_ISBN")"
-    printf '  paperback_isbn: "%s",\n' "$(typst_escape "$BOOK_PAPERBACK_ISBN")"
-    printf ')\n\n'
+    if [[ -f "$FRONT_MATTER_SRC" ]]; then
+      cp "$FRONT_MATTER_SRC" "$FRONT_MATTER_BUILD"
+      printf '#include "front-matter-print.typ"\n\n'
+      TOC_SRC="$SCRIPTS_DIR/toc-print.typ"
+      cp "$TOC_SRC" "$BUILD_DIR/toc-print.typ"
+      printf '#include "toc-print.typ"\n\n'
+    else
+      # Fallback: use the built-in front_matter() function for books
+      # that do not yet have a front-matter-print.typ.
+      printf '#book.front_matter(\n'
+      printf '  title: "%s",\n' "$(typst_escape "$BOOK_TITLE")"
+      printf '  subtitle: "%s",\n' "$(typst_escape "$BOOK_SUBTITLE")"
+      printf '  author: "%s",\n' "$(typst_escape "$BOOK_AUTHOR")"
+      printf '  copyright_year: "%s",\n' "$(typst_escape "$BOOK_COPYRIGHT_YEAR")"
+      printf '  hardcover_isbn: "%s",\n' "$(typst_escape "$BOOK_HARDCOVER_ISBN")"
+      printf '  paperback_isbn: "%s",\n' "$(typst_escape "$BOOK_PAPERBACK_ISBN")"
+      printf ')\n\n'
+    fi
   fi
 
   cat "$BODY_TYP"
