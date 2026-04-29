@@ -107,6 +107,16 @@ local function table_col_count(el)
   return 1
 end
 
+local function concat_inlines(...)
+  local out = {}
+  for _, xs in ipairs({...}) do
+    for _, x in ipairs(xs or {}) do
+      table.insert(out, x)
+    end
+  end
+  return out
+end
+
 local function clone_inlines(src, first, last)
   local out = {}
   for i = first, last do table.insert(out, src[i]) end
@@ -177,10 +187,13 @@ function Para(el)
     local rest = clone_inlines(c, rest_start, #c)
     next_para_kind = "normal"
     return {
-      raw_block('#book.runin(label: ['),
-      pandoc.Plain(label),
-      raw_block('])['),
-      pandoc.Plain(rest),
+      raw_block('#book.para(kind: "normal")['),
+      pandoc.Plain(concat_inlines(
+        { raw_inline("#book.strong[") },
+        label,
+        { raw_inline("] ") },
+        rest
+      )),
       raw_block(']')
     }
   end
@@ -198,23 +211,16 @@ function Para(el)
         local rest = clone_inlines(c, rest_start, #c)
         next_para_kind = "normal"
         return {
-          raw_block('#book.runin(label: ['),
-          pandoc.Plain(label),
-          raw_block('])['),
-          pandoc.Plain(rest),
+          raw_block('#book.para(kind: "normal")['),
+          pandoc.Plain(concat_inlines(
+            { raw_inline("#book.strong[") },
+            label,
+            { raw_inline("] ") },
+            rest
+          )),
           raw_block(']')
         }
       end
-    end
-  end
-
-  if para_ends_with_colon(el) then
-    local text = trim(stringify(c))
-    -- Only short label/caption lines become lead-ins. Full prose paragraphs
-    -- ending in a colon still need normal paragraph handling and indentation.
-    if #text <= 90 and not text:match("[%.%!%?][^%.%!%?]*:$") then
-      next_para_kind = "normal"
-      return { raw_block('#book.leadin['), pandoc.Plain(c), raw_block(']') }
     end
   end
 
@@ -349,6 +355,7 @@ function Table(el)
 end
 
 function Figure(el) return blocks_between("#book.figure[", el.content, "]") end
+
 function Div(el)
   local classes = table.concat(el.classes or {}, " ")
   return blocks_between('#book.div(classes: "' .. esc_attr(classes) .. '")[', el.content, "]")
@@ -360,16 +367,20 @@ function Strikeout(el) return inlines_between("#book.strike[", el.content, "]") 
 function Superscript(el) return inlines_between("#book.sup[", el.content, "]") end
 function Subscript(el) return inlines_between("#book.sub[", el.content, "]") end
 function SmallCaps(el) return inlines_between("#book.smallcaps[", el.content, "]") end
+
 function Quoted(el)
   local kind = "double"
   if el.quotetype == "SingleQuote" then kind = "single" end
   return inlines_between('#book.quoted(kind: "' .. kind .. '")[', el.content, "]")
 end
+
 function Code(el) return raw_inline("#book.code[" .. el.text .. "]") end
 function Link(el) return inlines_between('#book.link(url: "' .. esc_attr(el.target) .. '")[', el.content, "]") end
+
 function Image(el)
   local alt = stringify(el.content)
   return raw_inline('#book.image(src: "' .. esc_attr(el.src) .. '", alt: "' .. esc_attr(alt) .. '")')
 end
+
 function LineBreak() return raw_inline("#book.linebreak[]") end
 function Str(el) return el end

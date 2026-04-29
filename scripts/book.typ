@@ -499,7 +499,7 @@
 #let sub(body)       = _b-sub[#body]
 #let smallcaps(body) = _b-sc[#body]
 #let quoted(body, kind: "double") = {
-  if kind == "single" { [‘#body’] } else { [“#body”] }
+  if kind == "single" { ['#body'] } else { ["#body"] }
 }
 #let code(body) = {
   _mono-text(_b-raw(body), size: 0.9em)
