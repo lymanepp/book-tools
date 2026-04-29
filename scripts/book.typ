@@ -4,19 +4,9 @@
 
 #let _b-emph     = emph
 #let _b-strong   = strong
-#let _b-strike   = strike
-#let _b-super    = super
-#let _b-sub      = sub
-#let _b-sc       = smallcaps
-#let _b-link     = link
-#let _b-image    = image
-#let _b-raw      = raw
-#let _b-line     = line
-#let _b-lbreak   = linebreak
 
 // Typography
 #let _body-font     = "TeX Gyre Pagella"
-#let _mono-font     = "TeX Gyre Cursor"
 #let _body-size     = 11pt
 #let _fn-size       = 9pt
 #let _hdr-size      = 9pt
@@ -30,12 +20,12 @@
 #let _page-width  = 6in
 #let _page-height = 9in
 #let _margin-top  = 0.70in
-#let _margin-bot  = 0.82in
+#let _margin-bot  = 0.62in
 #let _margin-in   = 0.90in
 #let _margin-out  = 0.625in
 
 // Vertical rhythm and indents
-#let _leading        = 6.5pt
+#let _leading        = 6.6pt
 #let _para-spacing   = 0pt
 #let _indent         = 0.25in
 #let _quote-indent   = 0.375in
@@ -44,7 +34,6 @@
 #let _list-spacing   = 0.45em
 #let _list-before    = 12pt
 #let _list-after     = 12pt
-#let _heading-keep   = 2.15em
 #let _chapter-top-space    = 0.82in
 #let _chapter-number-after = 0.32in
 #let _chapter-title-after  = 0.16in
@@ -53,7 +42,6 @@
 #let _ch-title   = state("book-current-chapter-title", "")
 #let _suppress   = state("book-suppress-running-head", true)
 #let _chapter_open_page = state("book-current-chapter-opening-page", 0)
-#let _noind      = state("book-next-paragraph-no-indent", false)
 
 #let _body-par() = {
   set par(
@@ -83,10 +71,6 @@
   text(font: _body-font, size: size, weight: weight, style: style, lang: "en", hyphenate: _hyphenate)[#body]
 }
 
-#let _mono-text(body, size: 9pt) = {
-  text(font: _mono-font, size: size, lang: "en", hyphenate: false)[#body]
-}
-
 #let setup(doc, title: "") = {
   let _effective-title = if title != "" { title } else { _book-title }
   set document(title: _effective-title)
@@ -94,7 +78,12 @@
   set page(
     width: _page-width,
     height: _page-height,
-    margin: (top: _margin-top, bottom: _margin-bot, inside: _margin-in, outside: _margin-out),
+    margin: (
+      top: _margin-top,
+      bottom: _margin-bot,
+      inside: _margin-in,
+      outside: _margin-out,
+    ),
     header-ascent: 28%,
     // Gives chapter-opening footnotes and the centered footer page number
     // enough separation without changing the rest of the running-header logic.
@@ -160,7 +149,6 @@
       #_book-text(it)
     ]
     v(_list-after, weak: true)
-    _noind.update(true)
   }
   show enum: it => {
     v(_list-before, weak: true)
@@ -176,7 +164,6 @@
       #_book-text(it)
     ]
     v(_list-after, weak: true)
-    _noind.update(true)
   }
 
   // Native Pandoc footnotes stay native. This styles only the footnote area.
@@ -237,7 +224,6 @@
   v(_chapter-title-after)
   // Clear suppression so the second page of each chapter gets its running head.
   _suppress.update(false)
-  _noind.update(true)
 }
 
 #let front_chapter(title: "", id: "") = {
@@ -254,92 +240,9 @@
   heading(level: 1, outlined: true)[#title]
   v(_chapter-title-after)
   _suppress.update(false)
-  _noind.update(true)
 }
 
-// ── Front matter (title page + copyright + TOC) ──────────────────────────────
-// SUPERSEDED for print builds: pdf-typst.sh now #include's each book's
-// front-matter-print.typ directly, which gives per-book control over layout,
-// ISBNs, and page structure while keeping the auto-generated outline() TOC.
-// This function is retained for standalone/submission builds that do not have
-// a front-matter-print.typ, and as a fallback for new books.
-#let front_matter(
-  title: "",
-  subtitle: "",
-  author: "",
-  copyright_year: "",
-  hardcover_isbn: "",
-  paperback_isbn: "",
-) = {
-  // ── Title page (recto) ──
-  _suppress.update(true)
-  context { _chapter_open_page.update(counter(page).get().first()) }
-  v(1.8in)
-  {
-    set text(font: _body-font, size: _ch-title-size, weight: "bold")
-    _plain-par()
-    align(center)[#title]
-  }
-  if subtitle != "" {
-    v(0.18in)
-    set text(font: _body-font, size: _h2-size, weight: "regular", style: "italic")
-    _plain-par()
-    align(center)[#subtitle]
-  }
-  v(0.40in)
-  {
-    set text(font: _body-font, size: _body-size)
-    _plain-par()
-    align(center)[#author]
-  }
-
-  // ── Copyright page (verso) ──
-  pagebreak(to: "even")
-  _suppress.update(true)
-  context { _chapter_open_page.update(counter(page).get().first()) }
-  v(1fr)
-  {
-    set text(font: _body-font, size: _fn-size)
-    set par(justify: false, leading: 5pt, spacing: 4pt,
-            first-line-indent: (amount: 0pt, all: true))
-    [*#title*]
-    if subtitle != "" { linebreak(); _b-emph[#subtitle] }
-    v(6pt)
-    [© #copyright_year #author]
-    v(2pt)
-    [All rights reserved.]
-    v(6pt)
-    [No part of this publication may be reproduced, stored in a retrieval system, or transmitted in any form or by any means—electronic, mechanical, photocopying, recording, or otherwise—without the prior written permission of the author, except for brief quotations used in reviews or scholarly works.]
-    v(6pt)
-    [Scripture quotations are from the ESV® Bible (The Holy Bible, English Standard Version®), copyright © 2001 by Crossway, a publishing ministry of Good News Publishers. Used by permission. All rights reserved.]
-    if hardcover_isbn != "" { v(6pt); [ISBN: #hardcover_isbn (hardcover)] }
-    if paperback_isbn != "" { linebreak(); [ISBN: #paperback_isbn (paperback)] }
-    v(4pt)
-    [Printed in the United States of America.]
-  }
-
-  // ── Table of contents (recto) ──
-  pagebreak(to: "odd")
-  _suppress.update(true)
-  context { _chapter_open_page.update(counter(page).get().first()) }
-  v(0.60in)
-  {
-    set text(font: _body-font, size: _h2-size, weight: "bold")
-    _plain-par()
-    align(center)[Contents]
-  }
-  v(0.30in)
-  {
-    set text(font: _body-font, size: _body-size)
-    set par(justify: false, leading: _leading, spacing: 4pt,
-            first-line-indent: (amount: 0pt, all: true))
-    outline(title: none, indent: 0pt, depth: 1)
-  }
-
-  // Body begins on next recto; _suppress cleared by the first chapter() call.
-  pagebreak(to: "odd")
-  _suppress.update(true)
-}
+// Front matter is injected directly by pdf-typst.sh from each book's front-matter-print.typ.
 
 #let _kept-heading(title, size: _body-size, italic: false, before: 12pt, after: 5pt) = {
   v(before, weak: true)
@@ -349,31 +252,11 @@
     #title
     #v(after, weak: true)
   ]
-  _noind.update(true)
 }
 
 #let section(title: "", id: "") = _kept-heading(title, size: _h2-size, italic: false, before: 18pt, after: 6pt)
 #let subsection(title: "", id: "") = _kept-heading(title, size: _h3-size, italic: true, before: 13pt, after: 5pt)
 #let heading(level: 4, title: "", id: "") = _kept-heading(title, size: _body-size, italic: false, before: 11pt, after: 4pt)
-
-#let leadin(body) = {
-  v(5pt, weak: true)
-  block(breakable: false, sticky: true)[
-    #_reset-book-text()
-    #_noindent-par(justify: true)
-    #_book-text(body)
-    #v(3pt, weak: true)
-  ]
-  _noind.update(true)
-}
-
-#let runin(body, label: none) = {
-  block[
-    #_reset-book-text()
-    #_noindent-par(justify: true)
-    #_book-text([#strong[#label] #body])
-  ]
-}
 
 // ── Block quote ──────────────────────────────────────────────────────────────
 #let quote(body) = {
@@ -391,40 +274,6 @@
   ]
   v(_quote-after)
 }
-#let scripture_quote = quote
-
-// ── Horizontal rule ──────────────────────────────────────────────────────────
-#let hr(body: none) = {
-  v(12pt, weak: true)
-  _b-line(length: 100%, stroke: 0.4pt)
-  v(12pt, weak: true)
-  _noind.update(true)
-}
-
-// ── Line blocks ──────────────────────────────────────────────────────────────
-#let lineblock(body) = {
-  v(5pt, weak: true)
-  block[
-    #_reset-book-text()
-    #set par(first-line-indent: (amount: 0pt, all: true), spacing: 0pt)
-    #_book-text(body)
-  ]
-  v(5pt, weak: true)
-  _noind.update(true)
-}
-#let line(body) = { body; _b-lbreak() }
-
-// ── Code blocks ──────────────────────────────────────────────────────────────
-#let codeblock(body, language: "") = {
-  v(6pt, weak: true)
-  block(fill: luma(245), inset: 8pt, radius: 3pt, width: 100%)[
-    #set text(font: _mono-font, size: 9pt)
-    #set par(first-line-indent: (amount: 0pt, all: true), justify: false, spacing: 0pt)
-    #_mono-text(if language != "" { _b-raw(body, lang: language) } else { _b-raw(body) })
-  ]
-  v(6pt, weak: true)
-  _noind.update(true)
-}
 
 // ── Tables ───────────────────────────────────────────────────────────────────
 #let table_block(body) = {
@@ -439,7 +288,6 @@
     #box(width: 100%)[#_book-text(body, size: 9.6pt)]
   ]
   v(8pt, weak: true)
-  _noind.update(true)
 }
 
 #let table_cell(body, head: false) = {
@@ -458,10 +306,6 @@
   }
 }
 
-// ── Figure / Div ─────────────────────────────────────────────────────────────
-#let figure(body) = { v(8pt, weak: true); align(center)[#_book-text(body)]; v(8pt, weak: true); _noind.update(true) }
-#let div(body, classes: "") = body
-
 // ── Explicit paragraph wrapper ──────────────────────────────────────────────
 #let para(body, kind: "normal") = {
   block(width: 100%)[
@@ -478,32 +322,9 @@
   ]
 }
 
-// ── Compatibility wrappers retained for older generated .typ files ──────────
-#let p(body, kind: "normal") = para(body, kind: kind)
-#let bullets(body) = { v(5pt, weak: true); body; v(5pt, weak: true); _noind.update(true) }
-#let ordered(body) = { v(5pt, weak: true); body; v(5pt, weak: true); _noind.update(true) }
-#let item(body) = body
-#let deflist(body) = body
-#let defterm(body) = { strong(body) }
-#let defitem(body) = { pad(left: _indent)[#_book-text(body)] }
-#let thead(body) = body
-#let tbody(body) = body
-#let row(body) = body
-#let cell(body) = body
-
 // ── Inline wrappers ──────────────────────────────────────────────────────────
 #let emph(body)      = _b-emph[#body]
 #let strong(body)    = _b-strong[#body]
-#let strike(body)    = _b-strike[#body]
-#let sup(body)       = _b-super[#body]
-#let sub(body)       = _b-sub[#body]
-#let smallcaps(body) = _b-sc[#body]
 #let quoted(body, kind: "double") = {
   if kind == "single" { ['#body'] } else { ["#body"] }
 }
-#let code(body) = {
-  _mono-text(_b-raw(body), size: 0.9em)
-}
-#let link(body, url: "") = _b-link(url)[#body]
-#let image(src: "", alt: "") = _b-image(src, alt: alt)
-#let linebreak() = _b-lbreak()

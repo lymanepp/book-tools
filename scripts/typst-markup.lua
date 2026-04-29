@@ -132,12 +132,6 @@ local function strong_text_ends_runin(s)
   return s:match("[%.:]$") ~= nil
 end
 
-local function para_ends_with_colon(el)
-  local s = trim(stringify(el.content))
-  if s == "" then return false end
-  if s:match("^https?://") then return false end
-  return s:match(":$") ~= nil
-end
 
 function Pandoc(doc)
   -- pdf-typst.sh writes the Typst preamble itself so it can inject
@@ -229,8 +223,6 @@ function Para(el)
   return { raw_block('#book.para(kind: "' .. kind .. '")['), pandoc.Plain(c), raw_block(']') }
 end
 
-function Plain(el) return nil end
-
 function Note(el)
   -- Flatten notes into a single inline footnote. Do NOT run paragraph
   -- wrappers inside footnotes; that caused markers to sit on a separate line.
@@ -249,27 +241,6 @@ function BlockQuote(el)
   return out
 end
 
-function HorizontalRule() return raw_block("#book.hr[]") end
-
-function LineBlock(el)
-  local out = { raw_block("#book.lineblock[") }
-  for _, line in ipairs(el.content or {}) do
-    table.insert(out, raw_block("#book.line["))
-    table.insert(out, pandoc.Plain(line))
-    table.insert(out, raw_block("]"))
-  end
-  table.insert(out, raw_block("]"))
-  return out
-end
-
-function BulletList(el) return nil end
-function OrderedList(el) return nil end
-function DefinitionList(el) return nil end
-
-function CodeBlock(el)
-  return raw_block('#book.codeblock(language: "' .. esc_attr(el.classes and el.classes[1] or "") .. '")[' .. el.text .. ']')
-end
-
 local function cell_text_len(cell)
   local s = trim(stringify(cell_blocks(cell)))
   -- Count wide punctuation and spaces lightly; keep signal from actual words.
@@ -277,7 +248,33 @@ local function cell_text_len(cell)
   return #s
 end
 
+local function table_header_texts(el, cols)
+  local out = {}
+  local rows = table_rows_from_head(el.head)
+  local first = rows and rows[1]
+  local cells = first and row_cells(first) or {}
+  for i = 1, cols do
+    out[i] = string.lower(trim(stringify(cell_blocks(cells[i]))))
+  end
+  return out
+end
+
+local function is_two_col_definition_table(el, cols)
+  if cols ~= 2 then return false end
+  local h = table_header_texts(el, cols)
+  return h[2] == "definition"
+end
+
 local function dynamic_col_spec(el, cols)
+  -- Two-column definition tables that occur near one another should share the
+  -- same visual grammar.  Content-derived widths made Term/Definition and
+  -- Type of Call/Definition tables choose slightly different dividers, which
+  -- looked accidental when stacked.  Keep this semantic table shape stable
+  -- without imposing equal widths or flattening wider analytical tables.
+  if is_two_col_definition_table(el, cols) then
+    return "(1.60fr, 2.40fr)"
+  end
+
   local weights = {}
   for i = 1, cols do weights[i] = 0.0 end
 
@@ -296,10 +293,8 @@ local function dynamic_col_spec(el, cols)
   add_rows(table_rows_from_head(el.head), true)
   for _, body in ipairs(el.bodies or {}) do add_rows(table_body_rows(body), false) end
 
-  local total = 0.0
   for i = 1, cols do
     weights[i] = math.max(0.72, math.min(weights[i], 2.35))
-    total = total + weights[i]
   end
 
   -- Extremely narrow middle columns are useful for Greek terms or short labels,
@@ -354,19 +349,8 @@ function Table(el)
   return out
 end
 
-function Figure(el) return blocks_between("#book.figure[", el.content, "]") end
-
-function Div(el)
-  local classes = table.concat(el.classes or {}, " ")
-  return blocks_between('#book.div(classes: "' .. esc_attr(classes) .. '")[', el.content, "]")
-end
-
 function Emph(el) return inlines_between("#book.emph[", el.content, "]") end
 function Strong(el) return inlines_between("#book.strong[", el.content, "]") end
-function Strikeout(el) return inlines_between("#book.strike[", el.content, "]") end
-function Superscript(el) return inlines_between("#book.sup[", el.content, "]") end
-function Subscript(el) return inlines_between("#book.sub[", el.content, "]") end
-function SmallCaps(el) return inlines_between("#book.smallcaps[", el.content, "]") end
 
 function Quoted(el)
   local kind = "double"
@@ -374,13 +358,3 @@ function Quoted(el)
   return inlines_between('#book.quoted(kind: "' .. kind .. '")[', el.content, "]")
 end
 
-function Code(el) return raw_inline("#book.code[" .. el.text .. "]") end
-function Link(el) return inlines_between('#book.link(url: "' .. esc_attr(el.target) .. '")[', el.content, "]") end
-
-function Image(el)
-  local alt = stringify(el.content)
-  return raw_inline('#book.image(src: "' .. esc_attr(el.src) .. '", alt: "' .. esc_attr(alt) .. '")')
-end
-
-function LineBreak() return raw_inline("#book.linebreak[]") end
-function Str(el) return el end
