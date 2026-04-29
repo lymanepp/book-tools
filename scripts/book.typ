@@ -31,7 +31,7 @@
 #let _quote-indent   = 0.375in
 #let _quote-before   = 4.5pt
 #let _quote-after    = 4.5pt
-#let _list-spacing   = 0.45em
+#let _list-spacing   = 13.2pt  // one full line (_leading * 2) between items
 #let _list-before    = 12pt
 #let _list-after     = 12pt
 #let _chapter-top-space    = 0.82in
@@ -146,6 +146,12 @@
         first-line-indent: (amount: 0pt, all: true),
         hanging-indent: 0pt,
       )
+      // book.para() wraps each paragraph in a block(); set block spacing so
+      // that multi-paragraph list items have proper inter-paragraph breathing
+      // room. This does not affect the item-to-item spacing (controlled by
+      // set list/enum above) because those gaps are measured between items,
+      // not between blocks inside an item.
+      #set block(spacing: _leading * 2)
       #_book-text(it)
     ]
     v(_list-after, weak: true)
@@ -161,6 +167,8 @@
         first-line-indent: (amount: 0pt, all: true),
         hanging-indent: 0pt,
       )
+      // Same fix as show list above.
+      #set block(spacing: _leading * 2)
       #_book-text(it)
     ]
     v(_list-after, weak: true)
