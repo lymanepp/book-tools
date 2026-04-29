@@ -131,6 +131,9 @@
     },
   )
 
+  set page(numbering: "1")
+  counter(page).update(1)
+
   _reset-book-text()
   _body-par()
 

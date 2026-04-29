@@ -23,6 +23,7 @@
   show outline.entry: it => {
     let eloc = it.element.location()
     let pg = counter(page).at(eloc).first()
+    let pg-fmt = numbering(eloc.page-numbering(), pg)
     let entry = if it.element.numbering != none {
       let n = numbering(it.element.numbering, ..counter(heading).at(eloc))
       [#n#h(0.5em)#it.element.body]
@@ -31,7 +32,7 @@
     }
     block(above: 0pt, below: 0pt,
       grid(columns: (1fr, auto), gutter: 0pt,
-        [#entry #box(width: 1fr, repeat[.])], [#h(4pt)#pg],
+        [#entry #box(width: 1fr, repeat[.])], [#h(4pt)#pg-fmt],
       )
     )
     v(8.9pt)
@@ -44,6 +45,8 @@
 #book._suppress.update(true)
 #book._chapter_open_page.update(0)
 
-// Body begins on next recto. _suppress is cleared by the first chapter() call.
+// Body begins on next recto. Counter resets to 1 so the Introduction
+// is always page 1. No scheme change needed — Arabic throughout.
 #pagebreak(to: "odd")
 #book._suppress.update(true)
+#counter(page).update(1)
