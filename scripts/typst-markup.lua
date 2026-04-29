@@ -236,7 +236,13 @@ function Note(el)
   local text = table.concat(parts, " ")
   return raw_inline("#footnote[" .. esc_typst_text(text) .. "]")
 end
-function BlockQuote(el) return blocks_between("#book.quote[", el.content, "]") end
+
+function BlockQuote(el)
+  local out = blocks_between("#book.quote[", el.content, "]")
+  next_para_kind = "normal"   -- consume the "first" set by the preceding header
+  return out
+end
+
 function HorizontalRule() return raw_block("#book.hr[]") end
 
 function LineBlock(el)
