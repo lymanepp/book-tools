@@ -35,7 +35,7 @@
 #let _margin-out  = 0.625in
 
 // Vertical rhythm and indents
-#let _leading        = 7.5pt
+#let _leading        = 6.3pt
 #let _para-spacing   = 0pt
 #let _indent         = 0.25in
 #let _quote-indent   = 0.375in
@@ -88,7 +88,8 @@
 }
 
 #let setup(doc, title: "") = {
-  set document(title: if title != "" { title } else { _book-title })
+  let _effective-title = if title != "" { title } else { _book-title }
+  set document(title: _effective-title)
 
   set page(
     width: _page-width,
@@ -109,7 +110,7 @@
         _plain-par()
         if calc.even(pg) {
           // Even (left-hand) pages: page number on the outside/left edge.
-          grid(columns: (auto, 1fr), gutter: 0pt, str(pg), align(right)[#_book-title])
+          grid(columns: (auto, 1fr), gutter: 0pt, str(pg), align(right)[#_effective-title])
         } else {
           // Odd (right-hand) pages: page number on the outside/right edge.
           grid(columns: (1fr, auto), gutter: 0pt, _ch-title.at(here()), align(right)[#str(pg)])
