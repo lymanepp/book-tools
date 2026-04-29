@@ -35,7 +35,7 @@
 #let _margin-out  = 0.625in
 
 // Vertical rhythm and indents
-#let _leading        = 6.3pt
+#let _leading        = 6.5pt
 #let _para-spacing   = 0pt
 #let _indent         = 0.25in
 #let _quote-indent   = 0.375in
