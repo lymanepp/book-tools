@@ -196,6 +196,12 @@
   // suppresses all visual rendering of those headings.
   show heading: it => none
 
+  // Prevent line breaks before em-dashes. Without this, Typst's line-breaking
+  // algorithm treats the em-dash as a valid break opportunity and begins lines
+  // with "—", which is typographically wrong. The zero-width non-breaking space
+  // (h(0pt)) before the dash closes that break opportunity.
+  show "—": it => h(0pt, weak: false) + it
+
   doc
 }
 
