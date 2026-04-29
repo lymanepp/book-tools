@@ -349,6 +349,113 @@ function Table(el)
   return out
 end
 
+-- Serialize a single inline element to a Typst raw string.
+-- Mirrors the inline handlers (Emph, Strong, Quoted, Note) defined below.
+local inlines_to_typst  -- forward declaration; defined after inline_to_typst
+local function inline_to_typst(el)
+  if el.t == "Str" then
+    return el.text
+  elseif el.t == "Space" or el.t == "SoftBreak" then
+    return " "
+  elseif el.t == "LineBreak" then
+    return " "
+  elseif el.t == "Emph" then
+    return "#book.emph[" .. inlines_to_typst(el.content) .. "]"
+  elseif el.t == "Strong" then
+    return "#book.strong[" .. inlines_to_typst(el.content) .. "]"
+  elseif el.t == "Quoted" then
+    local kind = el.quotetype == "SingleQuote" and "single" or "double"
+    return '#book.quoted(kind: "' .. kind .. '")[' .. inlines_to_typst(el.content) .. "]"
+  elseif el.t == "Note" then
+    local parts = {}
+    for _, b in ipairs(el.content or {}) do
+      local s = trim(stringify(b))
+      if s ~= "" then table.insert(parts, s) end
+    end
+    return "#footnote[" .. esc_typst_text(table.concat(parts, " ")) .. "]"
+  elseif el.t == "RawInline" and el.format == "typst" then
+    return el.text
+  elseif el.t == "Code" then
+    return "`" .. el.text .. "`"
+  elseif el.t == "Math" then
+    return "$" .. el.text .. "$"
+  else
+    -- Fallback: stringify and escape
+    return esc_typst_text(stringify(el))
+  end
+end
+
+-- Serialize a list of inlines. Defined after inline_to_typst so both can
+-- call each other (inline_to_typst calls inlines_to_typst for children).
+inlines_to_typst = function(inlines)  -- assigns the forward-declared local
+  local parts = {}
+  for _, il in ipairs(inlines or {}) do
+    table.insert(parts, inline_to_typst(il))
+  end
+  return table.concat(parts, "")
+end
+
+-- Serialize a paragraph's inlines to a book.para() call.
+local function para_to_typst(inlines, kind)
+  -- Handle run-in strong (bold label ending in period/colon followed by body)
+  local c = inlines
+  if c[1] and c[1].t == "Strong" and strong_text_ends_runin(stringify(c[1].content)) and c[2] ~= nil then
+    local label = inlines_to_typst(c[1].content)
+    local rest_start = 2
+    if is_space(c[rest_start]) then rest_start = rest_start + 1 end
+    local rest_inlines = {}
+    for i = rest_start, #c do table.insert(rest_inlines, c[i]) end
+    local rest = inlines_to_typst(rest_inlines)
+    return '#book.para(kind: "' .. kind .. '")[#book.strong[' .. label .. "] " .. rest .. "]"
+  end
+  return '#book.para(kind: "' .. kind .. '")[' .. inlines_to_typst(c) .. "]"
+end
+
+local function render_list(items, marker)
+  local out = {}
+  for _, item in ipairs(items or {}) do
+    local parts = {}
+    local first_para = true
+    for _, b in ipairs(item or {}) do
+      if b.t == "Para" or b.t == "Plain" then
+        local kind = first_para and "first" or "normal"
+        local line = para_to_typst(b.content or {}, kind)
+        if first_para then
+          table.insert(parts, marker .. " " .. line)
+        else
+          -- Continuation paragraphs: 2-space indent so Typst keeps them in the item
+          table.insert(parts, "  " .. line)
+        end
+        first_para = false
+      elseif b.t == "BlockQuote" then
+        local inner = {}
+        for _, qb in ipairs(b.content or {}) do
+          if qb.t == "Para" or qb.t == "Plain" then
+            table.insert(inner, inlines_to_typst(qb.content or {}))
+          end
+        end
+        local line = "#book.quote[" .. table.concat(inner, " ") .. "]"
+        table.insert(parts, (first_para and (marker .. " ") or "  ") .. line)
+        first_para = false
+      else
+        local line = esc_typst_text(stringify(b))
+        table.insert(parts, (first_para and (marker .. " ") or "  ") .. line)
+        first_para = false
+      end
+    end
+    table.insert(out, raw_block(table.concat(parts, "\n")))
+  end
+  return out
+end
+
+function BulletList(el)
+  return render_list(el.content, "-")
+end
+
+function OrderedList(el)
+  return render_list(el.content, "+")
+end
+
 function Emph(el) return inlines_between("#book.emph[", el.content, "]") end
 function Strong(el) return inlines_between("#book.strong[", el.content, "]") end
 
