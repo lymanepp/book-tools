@@ -357,7 +357,8 @@ local function protect_emdashes_in_text(s)
   s = tostring(s or "")
   -- U+2060 WORD JOINER: zero-width, no break opportunity. h(0pt) is a glue
   -- element and remains a break point; U+2060 is the correct Unicode primitive.
-  return s:gsub("\xe2\x80\x94", "\xe2\x81\xa0\xe2\x80\x94")
+  local protected = s:gsub("\xe2\x80\x94", "\xe2\x81\xa0\xe2\x80\x94")
+  return protected
 end
 
 function Str(el)
