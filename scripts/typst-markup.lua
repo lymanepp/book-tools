@@ -349,12 +349,46 @@ function Table(el)
   return out
 end
 
+-- Protect em-dashes from line-break decisions by injecting a zero-width
+-- no-break hint before each one at the Pandoc AST level.  Typst's line
+-- breaker operates on text runs assembled after this filter runs, so the
+-- show-rule approach in book.typ is unreliable; this layer owns the fix.
+local function protect_emdashes_in_text(s)
+  s = tostring(s or "")
+  -- U+2060 WORD JOINER: zero-width, no break opportunity. h(0pt) is a glue
+  -- element and remains a break point; U+2060 is the correct Unicode primitive.
+  return s:gsub("\xe2\x80\x94", "\xe2\x81\xa0\xe2\x80\x94")
+end
+
+function Str(el)
+  if not el.text:find("\xe2\x80\x94", 1, true) then
+    return nil
+  end
+  local out = {}
+  local pos = 1
+  while true do
+    local i, j = el.text:find("\xe2\x80\x94", pos, true)
+    if not i then
+      if pos <= #el.text then
+        table.insert(out, pandoc.Str(el.text:sub(pos)))
+      end
+      break
+    end
+    if i > pos then
+      table.insert(out, pandoc.Str(el.text:sub(pos, i - 1)))
+    end
+    table.insert(out, pandoc.Str("\xe2\x81\xa0\xe2\x80\x94"))  -- U+2060 word-joiner + em-dash
+    pos = j + 1
+  end
+  return out
+end
+
 -- Serialize a single inline element to a Typst raw string.
 -- Mirrors the inline handlers (Emph, Strong, Quoted, Note) defined below.
 local inlines_to_typst  -- forward declaration; defined after inline_to_typst
 local function inline_to_typst(el)
   if el.t == "Str" then
-    return el.text
+    return protect_emdashes_in_text(el.text)
   elseif el.t == "Space" or el.t == "SoftBreak" then
     return " "
   elseif el.t == "LineBreak" then
