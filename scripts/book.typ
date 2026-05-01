@@ -4,6 +4,7 @@
 
 #let _b-emph     = emph
 #let _b-strong   = strong
+#let _native-heading = heading
 
 // Typography
 #let _body-font     = "TeX Gyre Pagella"
@@ -14,6 +15,11 @@
 #let _ch-title-size = 18pt
 #let _h2-size       = 13pt
 #let _h3-size       = 11.5pt
+#let _index-size    = 10pt
+#let _index-top-space = 0.0in
+#let _index-title-after = 10pt
+#let _index-entry-leading = 7.2pt
+#let _index-entry-gap = 4.2pt
 #let _hyphenate     = false
 
 // Page geometry
@@ -191,7 +197,7 @@
     _book-text(it, size: _fn-size)
   }
 
-  // chapter() emits an invisible heading(outlined: true) so that outline()
+  // chapter() emits an invisible level-1 heading so that outline()
   // can collect chapter titles and page numbers for the TOC. The show rule
   // suppresses all visual rendering of those headings.
   show heading: it => none
@@ -227,7 +233,7 @@
   // Emit an invisible level-1 heading so outline() can build the TOC.
   // numbering is set so outline.entry can render "N.   Title" format.
   // The show heading: none rule in setup() suppresses visual rendering.
-  heading(level: 1, outlined: true, numbering: "1.")[#title]
+  _native-heading(level: 1, numbering: "1.")[#title]
 
   v(_chapter-title-after)
   // Clear suppression so the second page of each chapter gets its running head.
@@ -245,7 +251,7 @@
     _plain-par()
     align(center)[#title]
   }
-  heading(level: 1, outlined: true)[#title]
+  _native-heading(level: 1)[#title]
   v(_chapter-title-after)
   _suppress.update(false)
 }
@@ -327,6 +333,59 @@
     )
     #if kind == "normal" { h(_indent) }
     #_book-text(body)
+  ]
+}
+
+
+// ── Back-matter index ───────────────────────────────────────────────────────
+#let index_chapter(title: "Topics Index") = {
+  _suppress.update(true)
+  pagebreak(weak: true, to: "odd")
+  context { _chapter_open_page.update(counter(page).get().first()) }
+  _ch-title.update(title)
+
+  // Tighter than normal chapter openers; the index is back matter, not a main chapter.
+  v(_index-top-space)
+  {
+    set text(font: _body-font, size: _ch-title-size, weight: "bold")
+    _plain-par()
+    align(center)[#title]
+  }
+
+  // Emit an invisible level-1 heading so outline() includes the back-matter
+  // index in the printed Table of Contents. This mirrors front_chapter():
+  // the visible title above is hand-set, and setup() suppresses the heading's
+  // visual rendering with `show heading: it => none`.
+  _native-heading(level: 1)[#title]
+
+  v(_index-title-after)
+  _suppress.update(false)
+}
+
+#let index_volume(title: "") = {
+  if title != "" {
+    v(10pt, weak: true)
+    block(breakable: false, sticky: true)[
+      #set text(font: _body-font, size: _h2-size, weight: "bold")
+      #set par(justify: false, leading: _leading, spacing: 0pt,
+        first-line-indent: (amount: 0pt, all: true), hanging-indent: 0pt)
+      #title
+    ]
+    v(5pt, weak: true)
+  }
+}
+
+#let index_entry(term: "", desc: "", refs: "") = {
+  block(width: 100%, below: _index-entry-gap)[
+    #set text(font: _body-font, size: _index-size, lang: "en", hyphenate: false)
+    #set par(
+      justify: false,
+      leading: _index-entry-leading,
+      spacing: 0pt,
+      first-line-indent: (amount: 0pt, all: true),
+      hanging-indent: 1.5em,
+    )
+    #strong[#term]#if desc != "" { [ — #desc (#refs)] } else { [ (#refs)] }
   ]
 }
 
