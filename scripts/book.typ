@@ -389,6 +389,18 @@
   ]
 }
 
+#let topics_index(entries, title: "Topics Index") = {
+  index_chapter(title: title)
+
+  for entry in entries {
+    let term = entry.at(0)
+    let refs = entry.at(1)
+    let desc = if entry.len() > 2 { entry.at(2) } else { "" }
+
+    index_entry(term: term, desc: desc, refs: refs)
+  }
+}
+
 // ── Inline wrappers ──────────────────────────────────────────────────────────
 #let emph(body)      = _b-emph[#body]
 #let strong(body)    = _b-strong[#body]

@@ -29,7 +29,6 @@ mkdir -p "$BUILD_DIR" "$DIST_DIR"
 
 COMBINED_MD="$BUILD_DIR/$BOOK_NAME.combined.md"
 BODY_TYP="$BUILD_DIR/$BOOK_NAME.body.typ"
-INDEX_TYP="$BUILD_DIR/$BOOK_NAME.index.typ"
 GENERATED_TYP="$BUILD_DIR/$BOOK_NAME.typ"
 OUTPUT_PDF="$DIST_DIR/$BOOK_NAME-$MODE.pdf"
 
@@ -77,142 +76,6 @@ typst_escape() {
 }
 
 
-find_index_source() {
-  # Topic indexes are intentionally per-book. Do not fall back to a
-  # repository-level index, because book1 and book2 have distinct topic maps.
-  local candidates=(
-    "$BOOK_DIR/topics-index.md"
-    "$BOOK_DIR/index.md"
-  )
-  local f
-  for f in "${candidates[@]}"; do
-    if [[ -f "$f" ]]; then
-      printf '%s\n' "$f"
-      return 0
-    fi
-  done
-  return 1
-}
-
-generate_index_typ() {
-  local src="$1"
-  local dest="$2"
-  local volume=""
-  case "$BOOK_NAME" in
-    book1) volume="Volume 1" ;;
-    book2) volume="Volume 2" ;;
-  esac
-
-  python3 - "$src" "$dest" "$volume" <<'PY'
-import re
-import sys
-from pathlib import Path
-
-src = Path(sys.argv[1])
-dest = Path(sys.argv[2])
-target_volume = sys.argv[3]
-text = src.read_text(encoding="utf-8")
-lines = text.splitlines()
-
-has_volume_sections = any(re.match(r"^##\s+Volume\s+\d+\s*$", line.strip(), re.I) for line in lines)
-
-selected = []
-if has_volume_sections and target_volume:
-    capture = False
-    for line in lines:
-        stripped = line.strip()
-        if re.match(r"^##\s+Volume\s+\d+\s*$", stripped, re.I):
-            capture = stripped.lower() == f"## {target_volume}".lower()
-            continue
-        if capture:
-            selected.append(line)
-else:
-    selected = lines
-
-def typst_escape(value: str) -> str:
-    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
-
-def is_noise(line: str) -> bool:
-    s = line.strip()
-    return (
-        not s
-        or s == "---"
-        or s.startswith("# Topics Index")
-        or re.match(r"^##\s+Volume\s+\d+\s*$", s, re.I)
-    )
-
-def parse_term_line(line: str):
-    s = line.strip()
-    m = re.match(r"^\*\*(.+?)\*\*(.*)$", s)
-    if not m:
-        return None
-    term = m.group(1).strip()
-    tail = m.group(2).strip()
-    desc = ""
-    refs = ""
-
-    # One-line form: **Term** — description (1, 2, 3)
-    m_dash = re.match(r"^[—-]\s*(.*?)\s*\(([^()]*\d[^()]*)\)\s*$", tail)
-    if m_dash:
-        desc = m_dash.group(1).strip()
-        refs = m_dash.group(2).strip()
-        return term, desc, refs
-
-    # Current source form: **Term** (description), with refs on the next line.
-    m_paren = re.match(r"^\((.*)\)\s*$", tail)
-    if m_paren:
-        desc = m_paren.group(1).strip()
-    elif tail:
-        desc = tail.lstrip("—- ").strip()
-    return term, desc, refs
-
-entries = []
-i = 0
-while i < len(selected):
-    parsed = parse_term_line(selected[i])
-    if not parsed:
-        i += 1
-        continue
-    term, desc, refs = parsed
-
-    j = i + 1
-    while j < len(selected) and is_noise(selected[j]):
-        j += 1
-
-    if not refs and j < len(selected):
-        ref_line = selected[j].strip()
-        m_ref = re.match(r"^(?:Ch\.|Chapters?)\s*(.+)$", ref_line, re.I)
-        if m_ref:
-            refs = m_ref.group(1).strip()
-            i = j
-
-    if refs:
-        entries.append((term, desc, refs))
-    i += 1
-
-def sort_key(entry):
-    term = entry[0].lower()
-    term = re.sub(r",\s*the$", "", term)
-    term = re.sub(r"^(the|a|an)\s+", "", term)
-    return term
-
-entries.sort(key=sort_key)
-
-if not entries:
-    dest.write_text("", encoding="utf-8")
-    raise SystemExit(0)
-
-out = ['#book.index_chapter(title: "Topics Index")']
-
-for term, desc, refs in entries:
-    out.append('#book.index_entry(term: "{}", desc: "{}", refs: "{}")'.format(
-        typst_escape(term), typst_escape(desc), typst_escape(refs)
-    ))
-
-dest.write_text("\n".join(out) + "\n", encoding="utf-8")
-PY
-}
-
 collect_chapters() {
   if [[ -f "$BOOK_DIR/chapters.txt" ]]; then
     while IFS= read -r chapter || [[ -n "$chapter" ]]; do
@@ -257,13 +120,10 @@ WSS_SUPPRESS_TYPST_PREAMBLE=1 pandoc \
   "$COMBINED_MD"
 
 
-: > "$INDEX_TYP"
-if INDEX_SRC="$(find_index_source)"; then
-  generate_index_typ "$INDEX_SRC" "$INDEX_TYP"
-fi
-
 FRONT_MATTER_SRC="$BOOK_DIR/front-matter-print.typ"
 FRONT_MATTER_BUILD="$BUILD_DIR/front-matter-print.typ"
+BACK_MATTER_SRC="$BOOK_DIR/back-matter-print.typ"
+BACK_MATTER_BUILD="$BUILD_DIR/back-matter-print.typ"
 
 {
   printf '#import "book.typ" as book\n'
@@ -291,9 +151,15 @@ FRONT_MATTER_BUILD="$BUILD_DIR/front-matter-print.typ"
   fi
 
   cat "$BODY_TYP"
-  if [[ -s "$INDEX_TYP" ]]; then
+
+  if [[ "$MODE" == "print" && -f "$BACK_MATTER_SRC" ]]; then
+    cp "$BACK_MATTER_SRC" "$BACK_MATTER_BUILD"
+    # Back matter is intentionally concatenated instead of included.
+    # Typst includes do not inherit this file's local `book` import, while
+    # the curated back-matter file is allowed to call book.* helpers directly.
     printf '\n\n'
-    cat "$INDEX_TYP"
+    cat "$BACK_MATTER_BUILD"
+    printf '\n'
   fi
 } > "$GENERATED_TYP"
 
