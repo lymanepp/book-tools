@@ -29,17 +29,10 @@ echo "Downloading artifact: $artifact_name"
 gh run download --name "$artifact_name" --dir "$OUT_DIR"
 
 # Flatten directory structure
-find "$OUT_DIR" -type f -name "*.pdf" -exec mv -t "$OUT_DIR" {} +
 find "$OUT_DIR" -type f -name "*.docx" -exec mv -t "$OUT_DIR" {} +
+find "$OUT_DIR" -type f -name "*.epub" -exec mv -t "$OUT_DIR" {} +
+find "$OUT_DIR" -type f -name "*.pdf" -exec mv -t "$OUT_DIR" {} +
 find "$OUT_DIR" -mindepth 1 -type d -empty -delete
-
-# Convert to PDF
-shopt -s nullglob
-for docx in "$OUT_DIR"/*.docx; do
-  echo "Converting: $docx"
-  bash "$SCRIPT_DIR/docx2pdf.sh" "$docx"
-done
-shopt -u nullglob
 
 echo "Done. Files in $OUT_DIR:"
 ls -1 "$OUT_DIR"
