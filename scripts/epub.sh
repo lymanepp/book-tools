@@ -1,53 +1,54 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================================================
-# build-epub.sh
+# epub.sh — Build an EPUB from the manuscript source.
 #
-# Build an EPUB from the manuscript source using the submission-oriented
-# front matter and metadata.
+# Run from the workspace root:
+#   bash tools/scripts/epub.sh book1
+#   bash tools/scripts/epub.sh book2
 #
-# Run from either book directory:
-#   cd book1/ && bash ../scripts/build-epub.sh
-#   cd book2/ && bash ../scripts/build-epub.sh
+# Output: dist/<BOOK_OUTPUT_BASENAME>.epub
 #
-# Expected files in the current book directory:
+# Required files in the book directory:
 #   book.env
 #   front-matter-submission.md
 #   metadata-submission.yaml
-#   NN-*.md chapter files
-#
-# Expected support files alongside this script:
-#   mdformat.lua   (optional for future use; not required here)
+#   NN-*.md  (chapter files — no YAML metadata blocks inside them)
 #
 # Notes:
-# - Chapter files should not contain YAML metadata blocks.
-# - EPUB uses the submission front matter, not the print front matter.
-# - Footnotes are stripped because some TTS / Virtual Voice readers treat
-#   them as body text.
+# - Footnotes are stripped: some TTS / Virtual Voice readers treat them as body text.
+# - Images are not stripped; handle per-book in metadata or chapter source if needed.
 # =============================================================================
 
 set -euo pipefail
 
-SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-METADATA="metadata-submission.yaml"
-FRONT_MATTER="front-matter-submission.md"
-BOOK_ENV="book.env"
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$ROOT"
 
-if [[ ! -f "$METADATA" ]]; then
-    echo "ERROR: Missing metadata file: $METADATA" >&2
+BOOK="${1:-}"
+
+if [[ -z "$BOOK" ]]; then
+    echo "Usage: $0 book1|book2" >&2
     exit 1
 fi
 
-if [[ ! -f "$FRONT_MATTER" ]]; then
-    echo "ERROR: Missing front matter file: $FRONT_MATTER" >&2
-    exit 1
-fi
+BOOK_NAME="${BOOK#./}"
+BOOK_DIR="$ROOT/$BOOK_NAME"
+DIST_DIR="$ROOT/dist"
+
+BOOK_ENV="$BOOK_DIR/book.env"
+METADATA="$BOOK_DIR/metadata-submission.yaml"
+FRONT_MATTER="$BOOK_DIR/front-matter-submission.md"
+
+# ── Validate inputs ───────────────────────────────────────────────────────────
+
+[[ -d "$BOOK_DIR" ]] || { echo "ERROR: Missing book dir: $BOOK_DIR" >&2; exit 1; }
 
 if [[ ! -f "$BOOK_ENV" ]]; then
-    echo "ERROR: Missing $BOOK_ENV. Run from a book directory." >&2
+    echo "ERROR: Missing $BOOK_ENV." >&2
     exit 1
 fi
 
-# shellcheck disable=SC1091
+# shellcheck disable=SC1090
 source "$BOOK_ENV"
 
 if [[ -z "${BOOK_TITLE:-}" || -z "${BOOK_SUBTITLE:-}" || -z "${BOOK_OUTPUT_BASENAME:-}" ]]; then
@@ -55,62 +56,59 @@ if [[ -z "${BOOK_TITLE:-}" || -z "${BOOK_SUBTITLE:-}" || -z "${BOOK_OUTPUT_BASEN
     exit 1
 fi
 
-TITLE="$BOOK_TITLE"
-SUBTITLE="$BOOK_SUBTITLE"
-OUTPUT="${BOOK_OUTPUT_BASENAME}.epub"
+for required in "$METADATA" "$FRONT_MATTER"; do
+    if [[ ! -f "$required" ]]; then
+        echo "ERROR: Missing required file: $required" >&2
+        exit 1
+    fi
+done
+
+mkdir -p "$DIST_DIR"
+OUTPUT="$DIST_DIR/${BOOK_OUTPUT_BASENAME}.epub"
+AUTHOR="${BOOK_AUTHOR:-Lyman Epp}"
+
+# ── Collect chapter inputs ────────────────────────────────────────────────────
+
+INPUTS=("$FRONT_MATTER")
+while IFS= read -r md; do
+    INPUTS+=("$BOOK_DIR/$md")
+done < <(find "$BOOK_DIR" -maxdepth 1 -type f -name '[0-9][0-9]-*.md' -printf '%f\n' | sort)
+
+if [[ ${#INPUTS[@]} -le 1 ]]; then
+    echo "ERROR: No chapter files found in $BOOK_DIR (expected NN-*.md)." >&2
+    exit 1
+fi
+
+echo "Building: ${BOOK_TITLE}"
+echo "Output:   ${OUTPUT}"
+echo "Inputs:   $((${#INPUTS[@]})) files"
+printf '  - %s\n' "${INPUTS[@]}"
+
+# ── Clean inputs into workdir ─────────────────────────────────────────────────
 
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
-echo "Building: ${TITLE}"
-echo "Output:   ${OUTPUT}"
-
-INPUTS=("$FRONT_MATTER")
-while IFS= read -r md; do
-    INPUTS+=("$md")
-done < <(find . -maxdepth 1 -type f -name '[0-9][0-9]-*.md' -printf '%f\n' | sort)
-
-if [[ ${#INPUTS[@]} -le 1 ]]; then
-    echo "ERROR: No chapter files found." >&2
-    exit 1
-fi
-
-echo "Inputs:   $((${#INPUTS[@]})) files"
-printf '  - %s\n' "${INPUTS[@]}"
-
 CLEAN_FILES=()
 
-for md in "${INPUTS[@]}"; do
-    out="${WORKDIR}/${md}"
+for src in "${INPUTS[@]}"; do
+    out="$WORKDIR/$(basename "$src")"
 
-    cp "$md" "$out"
-
-    # Strip raw print/layout commands if any remain.
-    sed -i \
-        -e '/^\\newpage/d' \
-        -e '/^\\vspace/d' \
-        -e '/^\\toc/d' \
-        -e '/^\\raggedright/d' \
-        -e 's/\\newpage//g' \
-        -e 's/\\vspace{[^}]*}//g' \
-        "$out"
-
-    # Strip Pandoc fenced div markers if any remain.
-    sed -i '/^:::/d' "$out"
+    cp "$src" "$out"
 
     # Strip footnote definitions and inline references for EPUB/TTS friendliness.
     sed -i '/^\[\^[^]]*\]:/d' "$out"
     sed -i 's/\[\^[^]]*\]//g' "$out"
 
-    # Strip print-only image references if desired for EPUB simplicity.
-    sed -i '/!\[.*\](.*\.png)/d' "$out"
-
     # Collapse repeated blank lines.
-    awk 'BEGIN{blank=0} /^$/{if(blank) next; blank=1} !/^$/{blank=0} {print}' "$out" > "${out}.tmp"
+    awk 'BEGIN{blank=0} /^$/{if(blank) next; blank=1} !/^$/{blank=0} {print}' \
+        "$out" > "${out}.tmp"
     mv "${out}.tmp" "$out"
 
     CLEAN_FILES+=("$out")
 done
+
+# ── Pandoc ────────────────────────────────────────────────────────────────────
 
 echo
 echo "Running pandoc..."
@@ -124,11 +122,10 @@ pandoc \
     --toc-depth=1 \
     --split-level=1 \
     --metadata-file="${METADATA}" \
-    --metadata title="${TITLE}" \
-    --metadata subtitle="${SUBTITLE}" \
-    --metadata author="Lyman Epp" \
+    --metadata title="${BOOK_TITLE}" \
+    --metadata subtitle="${BOOK_SUBTITLE}" \
+    --metadata author="${AUTHOR}" \
     --metadata lang="en-US" \
-    --metadata description="A Reformed Baptist layman's examination of what Scripture says on the questions the world and the church are pressing hardest." \
     --wrap=none \
     --standalone
 

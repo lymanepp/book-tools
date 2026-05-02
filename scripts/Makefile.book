@@ -1,54 +1,38 @@
-# Makefile — per-book build targets for PDF, EPUB, and SSML outputs.
+# Makefile — per-book build targets for EPUB and SSML outputs.
 #
 # Run from a book directory:
-#   cd book1/ && make          # build everything
-#   cd book1/ && make build-pdf
-#   cd book1/ && make build-epub
-#   cd book1/ && make clean
+#   cd book1/ && make -f ../scripts/Makefile.book build-epub
+#   cd book1/ && make -f ../scripts/Makefile.book build-ssml
+#   cd book1/ && make -f ../scripts/Makefile.book clean
 #
-# DOCX is intentionally excluded from this Makefile because it requires
-# a two-stage build (pandoc → postprocess-pandoc.py) driven by docx.sh,
-# which also regenerates the reference template.  Run it separately:
+# PDF is built via the Typst pipeline:
+#   bash tools/scripts/pdf-typst.sh book1
+#
+# DOCX (publisher submission) is built via:
 #   cd book1/ && bash ../scripts/docx.sh
 
 SCRIPTS_DIR := ../scripts
 -include book.env
 export
 
-OUTPUT_DIR_PDF  := pdf
 OUTPUT_DIR_EPUB := epub
 OUTPUT_DIR_SSML := ssml
 
-MD_FILES  := $(sort $(wildcard [0-9][0-9]-*.md))
-PDF_FILES  := $(patsubst %.md, $(OUTPUT_DIR_PDF)/%.pdf,   $(MD_FILES))
+MD_FILES   := $(sort $(wildcard [0-9][0-9]-*.md))
 EPUB_FILES := $(patsubst %.md, $(OUTPUT_DIR_EPUB)/%.epub, $(MD_FILES))
 SSML_FILES := $(patsubst %.md, $(OUTPUT_DIR_SSML)/%.ssml, $(MD_FILES))
 
-.PHONY: all build-pdf build-epub build-ssml clean
+.PHONY: all build-epub build-epub-book build-ssml clean
 
-all: build-pdf build-epub build-ssml
+all: build-epub build-ssml
 
-build-pdf:  $(PDF_FILES)
 build-epub: $(EPUB_FILES)
-build-ssml: $(SSML_FILES)
 
-$(OUTPUT_DIR_PDF) $(OUTPUT_DIR_EPUB) $(OUTPUT_DIR_SSML):
-	mkdir -p $@
-
-# Per-chapter PDF (xelatex) — for proofing individual chapters.
-# Full-book PDF is produced via Word → PDF after the DOCX build.
-$(OUTPUT_DIR_PDF)/%.pdf: %.md | $(OUTPUT_DIR_PDF)
-	pandoc "$<" -o "$@" \
-		--pdf-engine=xelatex \
-		--include-in-header=header.tex \
-		--metadata-file=metadata-print.yaml \
-		--lua-filter=$(SCRIPTS_DIR)/mdformat.lua
-
-# Full-book EPUB
+# Full-book EPUB (preferred — use this for distribution)
 build-epub-book:
 	bash $(SCRIPTS_DIR)/epub.sh
 
-# Per-chapter EPUB fallback
+# Per-chapter EPUB (for proofing individual chapters)
 $(OUTPUT_DIR_EPUB)/%.epub: %.md | $(OUTPUT_DIR_EPUB)
 	pandoc "$<" -o "$@" \
 		--toc \
@@ -56,6 +40,11 @@ $(OUTPUT_DIR_EPUB)/%.epub: %.md | $(OUTPUT_DIR_EPUB)
 		--lua-filter=$(SCRIPTS_DIR)/mdformat.lua
 
 # SSML (speech synthesis markup — for TTS/audiobook pre-processing)
+build-ssml: $(SSML_FILES)
+
+$(OUTPUT_DIR_EPUB) $(OUTPUT_DIR_SSML):
+	mkdir -p $@
+
 $(OUTPUT_DIR_SSML)/%.ssml: %.md | $(OUTPUT_DIR_SSML)
 	pandoc "$<" -o "$@" \
 		--from=gfm \
@@ -64,4 +53,4 @@ $(OUTPUT_DIR_SSML)/%.ssml: %.md | $(OUTPUT_DIR_SSML)
 		--lua-filter=$(SCRIPTS_DIR)/md2ssml.lua
 
 clean:
-	rm -f $(PDF_FILES) $(EPUB_FILES) $(SSML_FILES)
+	rm -f $(EPUB_FILES) $(SSML_FILES)
