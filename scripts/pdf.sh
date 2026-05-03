@@ -30,42 +30,29 @@ mkdir -p "$BUILD_DIR" "$DIST_DIR"
 COMBINED_MD="$BUILD_DIR/$BOOK_NAME.combined.md"
 BODY_TYP="$BUILD_DIR/$BOOK_NAME.body.typ"
 GENERATED_TYP="$BUILD_DIR/$BOOK_NAME.typ"
-OUTPUT_PDF="$DIST_DIR/$BOOK_NAME-$MODE.pdf"
+BOOK_ENV="$BOOK_DIR/book.env"
 
-# Optional per-book metadata. Empty/missing values fall through to defaults below.
-if [[ -f "$BOOK_DIR/book.env" ]]; then
-  set -a
-  # shellcheck disable=SC1090
-  source "$BOOK_DIR/book.env"
-  set +a
+if [[ ! -f "$BOOK_ENV" ]]; then
+  echo "ERROR: Missing $BOOK_ENV." >&2
+  exit 1
 fi
 
-case "$BOOK_NAME" in
-  book1)
-    : "${BOOK_TITLE:=What Scripture Says, Volume 1}"
-    : "${BOOK_SUBTITLE:=Confronting the World with Biblical Truth}"
-    : "${BOOK_AUTHOR:=Lyman Epp}"
-    : "${BOOK_COPYRIGHT_YEAR:=2026}"
-    : "${BOOK_HARDCOVER_ISBN:=979-8-251614-81-7}"
-    : "${BOOK_PAPERBACK_ISBN:=979-8-251985-46-7}"
-    ;;
-  book2)
-    : "${BOOK_TITLE:=What Scripture Says, Volume 2}"
-    : "${BOOK_SUBTITLE:=Submitting the Church to Biblical Authority}"
-    : "${BOOK_AUTHOR:=Lyman Epp}"
-    : "${BOOK_COPYRIGHT_YEAR:=2026}"
-    : "${BOOK_HARDCOVER_ISBN:=979-8-254309-45-1}"
-    : "${BOOK_PAPERBACK_ISBN:=979-8-254309-71-0}"
-    ;;
-  *)
-    : "${BOOK_TITLE:=$BOOK_NAME}"
-    : "${BOOK_SUBTITLE:=}"
-    : "${BOOK_AUTHOR:=Lyman Epp}"
-    : "${BOOK_COPYRIGHT_YEAR:=2026}"
-    : "${BOOK_HARDCOVER_ISBN:=}"
-    : "${BOOK_PAPERBACK_ISBN:=}"
-    ;;
-esac
+# shellcheck disable=SC1090
+source "$BOOK_ENV"
+
+for var in BOOK_TITLE BOOK_SUBTITLE BOOK_OUTPUT_BASENAME; do
+  if [[ -z "${!var:-}" ]]; then
+    echo "ERROR: $BOOK_ENV must define $var." >&2
+    exit 1
+  fi
+done
+
+: "${BOOK_AUTHOR:=Lyman Epp}"
+: "${BOOK_COPYRIGHT_YEAR:=2026}"
+: "${BOOK_HARDCOVER_ISBN:=}"
+: "${BOOK_PAPERBACK_ISBN:=}"
+
+OUTPUT_PDF="$DIST_DIR/${BOOK_OUTPUT_BASENAME}-$MODE.pdf"
 
 # Escape strings for Typst string literals.
 typst_escape() {
