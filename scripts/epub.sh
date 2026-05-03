@@ -15,7 +15,8 @@
 #   NN-*.md  (chapter files — no YAML metadata blocks inside them)
 #
 # Notes:
-# - Footnotes are stripped: some TTS / Virtual Voice readers treat them as body text.
+# - Footnotes are preserved by default so the EPUB contains the full manuscript.
+# - Set EPUB_STRIP_FOOTNOTES=1 only when building a special TTS copy.
 # - Images are not stripped; handle per-book in metadata or chapter source if needed.
 # =============================================================================
 
@@ -66,6 +67,7 @@ done
 mkdir -p "$DIST_DIR"
 OUTPUT="$DIST_DIR/${BOOK_OUTPUT_BASENAME}.epub"
 AUTHOR="${BOOK_AUTHOR:-Lyman Epp}"
+STRIP_FOOTNOTES="${EPUB_STRIP_FOOTNOTES:-0}"
 
 # ── Collect chapter inputs ────────────────────────────────────────────────────
 
@@ -84,21 +86,65 @@ echo "Output:   ${OUTPUT}"
 echo "Inputs:   $((${#INPUTS[@]})) files"
 printf '  - %s\n' "${INPUTS[@]}"
 
-# ── Clean inputs into workdir ─────────────────────────────────────────────────
+# ── Render/copy inputs into workdir ───────────────────────────────────────────
 
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
 CLEAN_FILES=()
 
+render_front_matter() {
+    local src="$1"
+    local dst="$2"
+
+    FRONT_MATTER="$src" \
+    RENDERED_FRONT_MATTER="$dst" \
+    BOOK_TITLE="$BOOK_TITLE" \
+    BOOK_SUBTITLE="$BOOK_SUBTITLE" \
+    BOOK_OUTPUT_BASENAME="$BOOK_OUTPUT_BASENAME" \
+    BOOK_AUTHOR="$AUTHOR" \
+    BOOK_COPYRIGHT_YEAR="${BOOK_COPYRIGHT_YEAR:-}" \
+    BOOK_HARDCOVER_ISBN="${BOOK_HARDCOVER_ISBN:-}" \
+    BOOK_PAPERBACK_ISBN="${BOOK_PAPERBACK_ISBN:-}" \
+    python3 - <<'PY'
+from pathlib import Path
+import os
+
+src = Path(os.environ["FRONT_MATTER"])
+dst = Path(os.environ["RENDERED_FRONT_MATTER"])
+
+replacements = {
+    "{{BOOK_TITLE}}": os.environ["BOOK_TITLE"],
+    "{{BOOK_SUBTITLE}}": os.environ["BOOK_SUBTITLE"],
+    "{{BOOK_OUTPUT_BASENAME}}": os.environ["BOOK_OUTPUT_BASENAME"],
+    "{{BOOK_AUTHOR}}": os.environ["BOOK_AUTHOR"],
+    "{{BOOK_COPYRIGHT_YEAR}}": os.environ["BOOK_COPYRIGHT_YEAR"],
+    "{{BOOK_HARDCOVER_ISBN}}": os.environ["BOOK_HARDCOVER_ISBN"],
+    "{{BOOK_PAPERBACK_ISBN}}": os.environ["BOOK_PAPERBACK_ISBN"],
+}
+
+text = src.read_text(encoding="utf-8")
+for marker, value in replacements.items():
+    text = text.replace(marker, value)
+dst.write_text(text, encoding="utf-8")
+PY
+}
+
 for src in "${INPUTS[@]}"; do
     out="$WORKDIR/$(basename "$src")"
 
-    cp "$src" "$out"
+    if [[ "$src" == "$FRONT_MATTER" ]]; then
+        render_front_matter "$src" "$out"
+    else
+        cp "$src" "$out"
+    fi
 
-    # Strip footnote definitions and inline references for EPUB/TTS friendliness.
-    sed -i '/^\[\^[^]]*\]:/d' "$out"
-    sed -i 's/\[\^[^]]*\]//g' "$out"
+    if [[ "$STRIP_FOOTNOTES" == "1" ]]; then
+        # Special-purpose TTS build only. This intentionally removes footnotes.
+        # It is not used for the normal EPUB, which preserves the full text.
+        sed -i '/^\[\^[^]]*\]:/d' "$out"
+        sed -i 's/\[\^[^]]*\]//g' "$out"
+    fi
 
     # Collapse repeated blank lines.
     awk 'BEGIN{blank=0} /^$/{if(blank) next; blank=1} !/^$/{blank=0} {print}' \
@@ -135,7 +181,7 @@ echo
 
 if command -v epubcheck &>/dev/null; then
     echo "Running epubcheck..."
-    java -jar "$(command -v epubcheck)" "${OUTPUT}"
+    epubcheck "${OUTPUT}"
 else
     echo "epubcheck not found, skipping validation."
 fi

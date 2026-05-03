@@ -5,10 +5,10 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT"
 
 BOOK="${1:-}"
-MODE="${2:-print}"
+MODE="print"
 
 if [[ -z "$BOOK" ]]; then
-  echo "Usage: $0 book1|book2 [print|submission]" >&2
+  echo "Usage: $0 book1|book2" >&2
   exit 1
 fi
 
@@ -64,24 +64,14 @@ typst_escape() {
 
 
 collect_chapters() {
-  if [[ -f "$BOOK_DIR/chapters.txt" ]]; then
-    while IFS= read -r chapter || [[ -n "$chapter" ]]; do
-      chapter="${chapter%%#*}"
-      chapter="$(echo "$chapter" | xargs)"
-      [[ -z "$chapter" ]] && continue
-      printf '%s\n' "$chapter"
-    done < "$BOOK_DIR/chapters.txt"
-  else
-    # Deterministic fallback for the current repository layout: numbered chapter files.
-    find "$BOOK_DIR" -maxdepth 1 -type f -name '[0-9][0-9]-*.md' -printf '%f\n' | sort
-  fi
+  find "$BOOK_DIR" -maxdepth 1 -type f -name '[0-9][0-9]-*.md' -printf '%f\n' | sort
 }
 
 : > "$COMBINED_MD"
 
 mapfile -t CHAPTERS < <(collect_chapters)
 if [[ "${#CHAPTERS[@]}" -eq 0 ]]; then
-  echo "No chapters found. Add $BOOK_DIR/chapters.txt or numbered chapter files like 00-introduction.md." >&2
+  echo "No chapters found. Add numbered chapter files like 00-introduction.md." >&2
   exit 1
 fi
 
@@ -107,39 +97,37 @@ WSS_SUPPRESS_TYPST_PREAMBLE=1 pandoc \
   "$COMBINED_MD"
 
 
-FRONT_MATTER_SRC="$BOOK_DIR/front-matter-print.typ"
-FRONT_MATTER_BUILD="$BUILD_DIR/front-matter-print.typ"
-BACK_MATTER_SRC="$BOOK_DIR/back-matter-print.typ"
-BACK_MATTER_BUILD="$BUILD_DIR/back-matter-print.typ"
+FRONT_MATTER_SRC="$BOOK_DIR/front-matter-$MODE.typ"
+FRONT_MATTER_BUILD="$BUILD_DIR/front-matter-$MODE.typ"
+BACK_MATTER_SRC="$BOOK_DIR/back-matter-$MODE.typ"
+BACK_MATTER_BUILD="$BUILD_DIR/back-matter-$MODE.typ"
 
 {
   printf '#import "book.typ" as book\n'
   printf '#show: book.setup.with(title: "%s")\n\n' "$(typst_escape "$BOOK_TITLE")"
 
-  if [[ "$MODE" == "print" ]]; then
-    if [[ -f "$FRONT_MATTER_SRC" ]]; then
-      cp "$FRONT_MATTER_SRC" "$FRONT_MATTER_BUILD"
-      printf '#include "front-matter-print.typ"\n\n'
-      TOC_SRC="$SCRIPTS_DIR/toc-print.typ"
-      cp "$TOC_SRC" "$BUILD_DIR/toc-print.typ"
-      printf '#include "toc-print.typ"\n\n'
-    else
-      # Fallback: use the built-in front_matter() function for books
-      # that do not yet have a front-matter-print.typ.
-      printf '#book.front_matter(\n'
-      printf '  title: "%s",\n' "$(typst_escape "$BOOK_TITLE")"
-      printf '  subtitle: "%s",\n' "$(typst_escape "$BOOK_SUBTITLE")"
-      printf '  author: "%s",\n' "$(typst_escape "$BOOK_AUTHOR")"
-      printf '  copyright_year: "%s",\n' "$(typst_escape "$BOOK_COPYRIGHT_YEAR")"
-      printf '  hardcover_isbn: "%s",\n' "$(typst_escape "$BOOK_HARDCOVER_ISBN")"
-      printf '  paperback_isbn: "%s",\n' "$(typst_escape "$BOOK_PAPERBACK_ISBN")"
-      printf ')\n\n'
-    fi
+  if [[ -f "$FRONT_MATTER_SRC" ]]; then
+    cp "$FRONT_MATTER_SRC" "$FRONT_MATTER_BUILD"
+    printf "#include \"front-matter-$MODE.typ\"\n\n"
+    TOC_SRC="$SCRIPTS_DIR/toc-$MODE.typ"
+    cp "$TOC_SRC" "$BUILD_DIR/toc-$MODE.typ"
+    printf "#include \"toc-$MODE.typ\"\n\n"
+  else
+    # Fallback: use the built-in front_matter() function for books
+    # that do not yet have a front-matter-$MODE.typ.
+    printf '#book.front_matter(\n'
+    printf '  title: "%s",\n' "$(typst_escape "$BOOK_TITLE")"
+    printf '  subtitle: "%s",\n' "$(typst_escape "$BOOK_SUBTITLE")"
+    printf '  author: "%s",\n' "$(typst_escape "$BOOK_AUTHOR")"
+    printf '  copyright_year: "%s",\n' "$(typst_escape "$BOOK_COPYRIGHT_YEAR")"
+    printf '  hardcover_isbn: "%s",\n' "$(typst_escape "$BOOK_HARDCOVER_ISBN")"
+    printf '  paperback_isbn: "%s",\n' "$(typst_escape "$BOOK_PAPERBACK_ISBN")"
+    printf ')\n\n'
   fi
 
   cat "$BODY_TYP"
 
-  if [[ "$MODE" == "print" && -f "$BACK_MATTER_SRC" ]]; then
+  if [[ -f "$BACK_MATTER_SRC" ]]; then
     cp "$BACK_MATTER_SRC" "$BACK_MATTER_BUILD"
     # Back matter is intentionally concatenated instead of included.
     # Typst includes do not inherit this file's local `book` import, while

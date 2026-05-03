@@ -141,13 +141,35 @@ python3 "$TEMPLATE_BUILDER" "$TEMPLATE" "${TEMPLATE_ARGS[@]}"
 RENDERED_FRONT_MATTER="$(mktemp --suffix=.md)"
 trap 'rm -f "$RENDERED_FRONT_MATTER"' EXIT
 
-sed \
-    -e "s|{{BOOK_TITLE}}|${BOOK_TITLE}|g" \
-    -e "s|{{BOOK_SUBTITLE}}|${BOOK_SUBTITLE}|g" \
-    -e "s|{{BOOK_AUTHOR}}|${BOOK_AUTHOR:-Lyman Epp}|g" \
-    -e "s|{{BOOK_HARDCOVER_ISBN}}|${BOOK_HARDCOVER_ISBN:-}|g" \
-    -e "s|{{BOOK_PAPERBACK_ISBN}}|${BOOK_PAPERBACK_ISBN:-}|g" \
-    "$FRONT_MATTER" > "$RENDERED_FRONT_MATTER"
+export FRONT_MATTER RENDERED_FRONT_MATTER
+export BOOK_TITLE BOOK_SUBTITLE BOOK_OUTPUT_BASENAME
+export BOOK_AUTHOR="${BOOK_AUTHOR:-Lyman Epp}"
+export BOOK_HARDCOVER_ISBN="${BOOK_HARDCOVER_ISBN:-}"
+export BOOK_PAPERBACK_ISBN="${BOOK_PAPERBACK_ISBN:-}"
+export BOOK_COPYRIGHT_YEAR="${BOOK_COPYRIGHT_YEAR:-}"
+
+python3 - <<'PY'
+from pathlib import Path
+import os
+
+src = Path(os.environ["FRONT_MATTER"])
+dst = Path(os.environ["RENDERED_FRONT_MATTER"])
+
+replacements = {
+    "{{BOOK_TITLE}}": os.environ["BOOK_TITLE"],
+    "{{BOOK_SUBTITLE}}": os.environ["BOOK_SUBTITLE"],
+    "{{BOOK_OUTPUT_BASENAME}}": os.environ["BOOK_OUTPUT_BASENAME"],
+    "{{BOOK_AUTHOR}}": os.environ["BOOK_AUTHOR"],
+    "{{BOOK_COPYRIGHT_YEAR}}": os.environ["BOOK_COPYRIGHT_YEAR"],
+    "{{BOOK_HARDCOVER_ISBN}}": os.environ["BOOK_HARDCOVER_ISBN"],
+    "{{BOOK_PAPERBACK_ISBN}}": os.environ["BOOK_PAPERBACK_ISBN"],
+}
+
+text = src.read_text(encoding="utf-8")
+for marker, value in replacements.items():
+    text = text.replace(marker, value)
+dst.write_text(text, encoding="utf-8")
+PY
 
 # ── Collect chapter inputs ────────────────────────────────────────────────────
 
