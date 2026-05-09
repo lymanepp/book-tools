@@ -1,27 +1,47 @@
--- mdformat.lua — unified Lua filter for all output formats.
+-- mdformat.lua
 --
--- Handles:
---   \newpage    → odd-page section break (DOCX) / \newpage (LaTeX) / CSS break (EPUB)
---   \pagebreak  → plain page break       (DOCX) / \newpage (LaTeX) / CSS break (EPUB)
---   \toc        → native Word TOC field  (DOCX) / \tableofcontents (LaTeX)
---   BlockQuote  → "Block Text" style by default (pandoc built-in, styled by reference.docx)
---                 Fenced div with custom-style="Scripture Quote" → Scripture Quote style
+-- Unified Lua filter for DOCX + EPUB/HTML pipelines.
 --
--- Blockquote mapping:
---   Bare >    → pandoc emits "Block Text" in DOCX (built-in pandoc style name).
---               configure_paragraph_styles() in build-template.py styles it with
---               left indent and no first-line indent — appropriate for poetry / prose
---               block quotes that are NOT scripture.
+-- Print layout is now owned entirely by the Typst pipeline.
+-- This filter no longer implements odd-page logic.
 --
---   Scripture quotations should use the fenced div form to get the distinct style:
+-- Chapter structure is driven semantically by H1 headers:
+--
+--     # Chapter Title
+--
+-- H1 headers receive:
+--   DOCX      → simple page break before chapter
+--   EPUB/HTML → CSS page break before chapter
+--
+-- Legacy \newpage directives are ignored and may be safely removed
+-- from Markdown source files.
+--
+-- Remaining supported directives:
+--
+--   \pagebreak
+--   \clearpage
+--       Manual intra-chapter page break.
+--
+--   \toc
+--       Native Word TOC field insertion.
+--
+-- Blockquote behavior:
+--
+--   Bare >
+--       Uses Pandoc's built-in "Block Text" style in DOCX.
+--
+--   Scripture quotations:
 --
 --       ::: {custom-style="Scripture Quote"}
---       > For God so loved the world… (John 3:16)
+--       > Scripture text...
 --       :::
 --
---   This keeps bare > available for non-scripture block quotes and lets the
---   Scripture Quote style carry the shading, left border, and Palatino italic
---   applied by build-template.py.
+--   This preserves a distinction between ordinary block quotes and
+--   intentionally styled Scripture quotations.
+
+----------------------------------------------------------------------
+-- Helpers
+----------------------------------------------------------------------
 
 local function is_tex_command(raw, cmd)
   return raw.format:match("tex") and raw.text == cmd
@@ -35,84 +55,23 @@ local function is_pagebreak_tex(raw)
   return is_tex_command(raw, "\\pagebreak")
 end
 
-local function is_break_tex(raw)
-  return is_newpage_tex(raw) or is_pagebreak_tex(raw)
+local function is_clearpage_tex(raw)
+  return is_tex_command(raw, "\\clearpage")
+end
+
+local function is_manual_break_tex(raw)
+  return is_pagebreak_tex(raw) or is_clearpage_tex(raw)
 end
 
 local function is_toc_tex(raw)
   return is_tex_command(raw, "\\toc")
 end
 
-local function odd_page_section_break_docx()
-  -- Odd-page section break in OOXML.
-  --
-  -- Rules:
-  -- 1. sectPr must be inside <w:pPr> of an empty paragraph.
-  -- 2. Full layout properties must be repeated.
-  -- 3. Do NOT include <w:titlePg/>.
-  return pandoc.RawBlock("openxml", table.concat({
-    '<w:p>',
-      '<w:pPr>',
-        '<w:sectPr>',
-          '<w:type w:val="oddPage"/>',
-          '<w:pgSz w:w="8640" w:h="12960"/>',
-          '<w:pgMar w:top="1080" w:right="720" w:bottom="1080" w:left="1080" w:header="540" w:footer="540" w:gutter="0"/>',
-          '<w:cols w:space="720"/>',
-          '<w:docGrid w:linePitch="360"/>',
-          '<w:mirrorMargins/>',
-        '</w:sectPr>',
-      '</w:pPr>',
-    '</w:p>',
-  }))
-end
+----------------------------------------------------------------------
+-- DOCX helpers
+----------------------------------------------------------------------
 
-local function toc_docx()
-  -- Insert a native Word TOC content control + field.
-  -- Word will usually update/populate it on open or field update.
-  return pandoc.RawBlock("openxml", table.concat({
-    '<w:sdt>',
-      '<w:sdtPr>',
-        '<w:docPartObj>',
-          '<w:docPartGallery w:val="Table of Contents"/>',
-          '<w:docPartUnique/>',
-        '</w:docPartObj>',
-      '</w:sdtPr>',
-      '<w:sdtContent>',
-        '<w:p>',
-          '<w:pPr>',
-            '<w:pStyle w:val="TOCHeading"/>',
-          '</w:pPr>',
-          '<w:r>',
-            '<w:t xml:space="preserve">Table of Contents</w:t>',
-          '</w:r>',
-        '</w:p>',
-        '<w:p>',
-          '<w:r>',
-            '<w:fldChar w:fldCharType="begin" w:dirty="true"/>',
-            '<w:instrText xml:space="preserve">TOC \\o "1-1" \\h \\z \\u</w:instrText>',
-            '<w:fldChar w:fldCharType="separate"/>',
-            '<w:fldChar w:fldCharType="end"/>',
-          '</w:r>',
-        '</w:p>',
-      '</w:sdtContent>',
-    '</w:sdt>',
-  }))
-end
-
-local function toc_latex()
-  return pandoc.RawBlock("latex", "\\tableofcontents")
-end
-
-local function toc_html()
-  -- No-op for now. Pandoc won't build a real HTML TOC from here
-  -- unless you want to add custom handling later.
-  return nil
-end
-
-local function plain_page_break_docx()
-  -- A simple page break (not section-aware) for use within a chapter.
-  -- Use \pagebreak in Markdown for intra-chapter breaks.
-  -- Use \newpage for chapter boundaries (odd-page section break).
+local function page_break_docx()
   return pandoc.RawBlock("openxml", table.concat({
     '<w:p>',
       '<w:r>',
@@ -122,46 +81,126 @@ local function plain_page_break_docx()
   }))
 end
 
-local function html_page_break()
-  return pandoc.RawBlock("html",
-    "<div style=\"break-before: page; page-break-before: always;\"></div>"
-  )
+local function toc_docx()
+  return pandoc.RawBlock("openxml", table.concat({
+
+    '<w:sdt>',
+
+      '<w:sdtPr>',
+        '<w:docPartObj>',
+          '<w:docPartGallery w:val="Table of Contents"/>',
+          '<w:docPartUnique/>',
+        '</w:docPartObj>',
+      '</w:sdtPr>',
+
+      '<w:sdtContent>',
+
+        '<w:p>',
+          '<w:pPr>',
+            '<w:pStyle w:val="TOCHeading"/>',
+          '</w:pPr>',
+          '<w:r>',
+            '<w:t xml:space="preserve">Table of Contents</w:t>',
+          '</w:r>',
+        '</w:p>',
+
+        '<w:p>',
+          '<w:r>',
+            '<w:fldChar w:fldCharType="begin" w:dirty="true"/>',
+            '<w:instrText xml:space="preserve">TOC \\o "1-1" \\h \\z \\u</w:instrText>',
+            '<w:fldChar w:fldCharType="separate"/>',
+            '<w:fldChar w:fldCharType="end"/>',
+          '</w:r>',
+        '</w:p>',
+
+      '</w:sdtContent>',
+
+    '</w:sdt>',
+  }))
 end
 
+----------------------------------------------------------------------
+-- Header handling
+----------------------------------------------------------------------
+
+local seen_first_h1 = false
+
+function Header(el)
+  -- H1 headers define chapter boundaries.
+  -- Typst owns all real print pagination.
+  --
+  -- DOCX gets simple page breaks between chapters.
+  -- EPUB/HTML gets no forced breaks to avoid blank pages
+  -- and broken TOC navigation.
+
+  if el.level ~= 1 then
+    return el
+  end
+
+  --------------------------------------------------------------------
+  -- DOCX
+  --------------------------------------------------------------------
+
+  if FORMAT:match("docx") then
+
+    -- Do not insert a break before the first chapter.
+    if not seen_first_h1 then
+      seen_first_h1 = true
+      return el
+    end
+
+    return {
+      page_break_docx(),
+      el,
+    }
+  end
+
+  --------------------------------------------------------------------
+  -- EPUB / HTML
+  --------------------------------------------------------------------
+
+  return el
+end
+
+----------------------------------------------------------------------
+-- RawBlock handling
+----------------------------------------------------------------------
+
 function RawBlock(el)
-  -- \newpage → odd-page section break (chapter boundary)
+
+  --------------------------------------------------------------------
+  -- Ignore legacy \newpage directives entirely.
+  --
+  -- Structural chapter pagination is now driven by H1 headers.
+  --------------------------------------------------------------------
+
   if is_newpage_tex(el) then
+    return {}
+  end
+
+  --------------------------------------------------------------------
+  -- Manual intra-chapter page breaks.
+  --------------------------------------------------------------------
+
+  if is_manual_break_tex(el) then
+
     if FORMAT:match("docx") then
-      return odd_page_section_break_docx()
-    elseif FORMAT:match("latex") or FORMAT:match("pdf") then
-      return pandoc.RawBlock("latex", "\\newpage")
-    elseif FORMAT:match("epub") or FORMAT:match("html") then
-      return html_page_break()
+      return page_break_docx()
     end
+
     return nil
   end
 
-  -- \pagebreak → plain page break (within a chapter)
-  if is_pagebreak_tex(el) then
-    if FORMAT:match("docx") then
-      return plain_page_break_docx()
-    elseif FORMAT:match("latex") or FORMAT:match("pdf") then
-      return pandoc.RawBlock("latex", "\\newpage")
-    elseif FORMAT:match("epub") or FORMAT:match("html") then
-      return html_page_break()
-    end
-    return nil
-  end
+  --------------------------------------------------------------------
+  -- Native Word TOC insertion.
+  --------------------------------------------------------------------
 
-  -- \toc → native Word TOC field / LaTeX table of contents
   if is_toc_tex(el) then
+
     if FORMAT:match("docx") then
       return toc_docx()
-    elseif FORMAT:match("latex") or FORMAT:match("pdf") then
-      return toc_latex()
-    elseif FORMAT:match("epub") or FORMAT:match("html") then
-      return toc_html()
     end
+
     return nil
   end
 

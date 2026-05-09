@@ -1,0 +1,8 @@
+h1 {
+  break-before: avoid !important;
+  page-break-before: avoid !important;
+}
+
+body {
+  line-height: 1.4;
+}

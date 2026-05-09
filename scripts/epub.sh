@@ -34,6 +34,7 @@ fi
 
 BOOK_NAME="${BOOK#./}"
 BOOK_DIR="$ROOT/$BOOK_NAME"
+SCRIPTS_DIR="$ROOT/tools/scripts"
 DIST_DIR="$ROOT/dist"
 
 BOOK_ENV="$BOOK_DIR/book.env"
@@ -167,6 +168,7 @@ pandoc \
     --toc \
     --toc-depth=1 \
     --split-level=1 \
+    --css="$SCRIPTS_DIR/epub.css" \
     --metadata-file="${METADATA}" \
     --metadata title="${BOOK_TITLE}" \
     --metadata subtitle="${BOOK_SUBTITLE}" \
