@@ -81,6 +81,9 @@ import argparse
 import textwrap
 from pathlib import Path
 
+from elevenlabs import VoiceSettings
+from elevenlabs.client import ElevenLabs
+
 # ---------------------------------------------------------------------------
 # Configuration — Generation
 # ---------------------------------------------------------------------------
@@ -95,7 +98,20 @@ MODEL    = "eleven_v3"
 
 # Voice ID — replace with your chosen voice (use --list-voices to find IDs)
 # Audition voices at: https://elevenlabs.io/voice-library
-VOICE_ID = "REPLACE_WITH_YOUR_VOICE_ID"
+VOICE_ID = "JBFqnCBsd6RMkjVDRZzb"
+
+# ID                    Name                      Category
+# -------------------------------------------------------------
+# hpp4J3VqNfWAUOO0d1Us  Bella - Professional, Bright, Warm premade
+# N2lVS1w4EtoT3dr4eOWO  Callum - Husky Trickster  premade
+# IKne3meq5aSn9XLyUdCD  Charlie - Deep, Confident, Energetic premade
+# JBFqnCBsd6RMkjVDRZzb  George - Warm, Captivating Storyteller premade
+# SOYHLrjzK2X1ezoPC6cr  Harry - Fierce Warrior    premade
+# FGY2WhTYpPnrIDTdsKH5  Laura - Enthusiast, Quirky Attitude premade
+# TX3LPaxmHKxFdv7VOQHJ  Liam - Energetic, Social Media Creator premade
+# SAz9YHcvj6GT2YYXdXww  River - Relaxed, Neutral, Informative premade
+# CwhRBWXzGAHq8TQ4Fs17  Roger - Laid-Back, Casual, Resonant premade
+# EXAVITQu4vr4xnSDxMaL  Sarah - Mature, Reassuring, Confident premade
 
 # ElevenLabs output format (Pro plan or above required for 192 kbps)
 EL_FORMAT = "mp3_44100_192"
@@ -287,7 +303,6 @@ def estimate_credits(chapters: list[tuple[str, Path]], model: str) -> tuple:
 # ---------------------------------------------------------------------------
 
 def get_client(api_key: str):
-    from elevenlabs.client import ElevenLabs
     return ElevenLabs(api_key=api_key)
 
 
@@ -301,7 +316,6 @@ def list_voices(client) -> None:
 
 def api_narrate_chunk(client, text: str, voice_id: str, model: str,
                       el_format: str) -> bytes:
-    from elevenlabs import VoiceSettings
     audio_iter = client.text_to_speech.convert(
         text=text,
         voice_id=voice_id,
@@ -648,11 +662,6 @@ def main():
         if not api_key:
             print("ERROR: ELEVENLABS_API_KEY not set.", file=sys.stderr)
             sys.exit(1)
-        try:
-            from elevenlabs.client import ElevenLabs
-        except ImportError:
-            print("ERROR: pip install elevenlabs", file=sys.stderr)
-            sys.exit(1)
         list_voices(get_client(api_key))
         sys.exit(0)
 
@@ -733,11 +742,6 @@ def main():
                   "  export ELEVENLABS_API_KEY=your_key_here\n"
                   "  or add to a .env file next to this script.",
                   file=sys.stderr)
-            sys.exit(1)
-        try:
-            from elevenlabs.client import ElevenLabs
-        except ImportError:
-            print("ERROR: pip install elevenlabs pydub numpy", file=sys.stderr)
             sys.exit(1)
         client = get_client(api_key)
     else:
