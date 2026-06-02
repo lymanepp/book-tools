@@ -74,7 +74,8 @@ OPTIONAL_FIELDS = {
 
 
 def load_env(path: Path) -> dict[str, str]:
-    """Parse a shell-style key='value' env file. Returns a dict of strings."""
+    """Parse a shell-style key=value env file using shlex. Returns a dict of strings."""
+    import shlex
     env = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
@@ -84,10 +85,11 @@ def load_env(path: Path) -> dict[str, str]:
             continue
         key, _, raw = line.partition("=")
         key = key.strip()
-        # Strip surrounding quotes (single or double)
-        value = raw.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
-            value = value[1:-1]
+        raw = raw.strip()
+        try:
+            value = shlex.split(raw)[0] if raw else ""
+        except ValueError:
+            value = raw  # fallback: use raw if shlex fails
         env[key] = value
     return env
 
@@ -328,14 +330,18 @@ def main():
                 sys.exit(result_sed.returncode)
 
         # Write book.env (pdf.sh sources this)
+        # sq() safely single-quotes a value, escaping any embedded apostrophes.
+        def sq(s: str) -> str:
+            return "'" + s.replace("'", "'\\''") + "'"
+
         (fake_book / "book.env").write_text(
-            f"BOOK_TITLE='{title}'\n"
-            f"BOOK_SUBTITLE='{subtitle}'\n"
-            f"BOOK_OUTPUT_BASENAME='{basename}'\n"
-            f"BOOK_AUTHOR='{author}'\n"
+            f"BOOK_TITLE={sq(title)}\n"
+            f"BOOK_SUBTITLE={sq(subtitle)}\n"
+            f"BOOK_OUTPUT_BASENAME={sq(basename)}\n"
+            f"BOOK_AUTHOR={sq(author)}\n"
             f"BOOK_COPYRIGHT_YEAR={year}\n"
-            f"BOOK_HARDCOVER_ISBN='{hardcover_isbn}'\n"
-            f"BOOK_PAPERBACK_ISBN='{paperback_isbn}'\n",
+            f"BOOK_HARDCOVER_ISBN={sq(hardcover_isbn)}\n"
+            f"BOOK_PAPERBACK_ISBN={sq(paperback_isbn)}\n",
             encoding="utf-8",
         )
 
