@@ -14,12 +14,12 @@ fi
 
 BOOK_NAME="${BOOK#./}"
 BOOK_DIR="$ROOT/$BOOK_NAME"
-SCRIPTS_DIR="$ROOT/tools/scripts"
+BIN_DIR="$ROOT/tools/bin"
 BUILD_DIR="$ROOT/build/$BOOK_NAME"
 DIST_DIR="$ROOT/dist"
 
-LUA_FILTER="$SCRIPTS_DIR/typst-markup.lua"
-BOOK_TYP_SRC="$SCRIPTS_DIR/book.typ"
+LUA_FILTER="$BIN_DIR/typst-markup.lua"
+BOOK_TYP_SRC="$BIN_DIR/book.typ"
 
 [[ -d "$BOOK_DIR" ]] || { echo "Missing book dir: $BOOK_DIR" >&2; exit 1; }
 [[ -f "$LUA_FILTER" ]] || { echo "Missing Lua filter: $LUA_FILTER" >&2; exit 1; }
@@ -109,7 +109,7 @@ BACK_MATTER_BUILD="$BUILD_DIR/back-matter-$MODE.typ"
   if [[ -f "$FRONT_MATTER_SRC" ]]; then
     cp "$FRONT_MATTER_SRC" "$FRONT_MATTER_BUILD"
     printf "#include \"front-matter-$MODE.typ\"\n\n"
-    TOC_SRC="$SCRIPTS_DIR/toc-$MODE.typ"
+    TOC_SRC="$BIN_DIR/toc-$MODE.typ"
     cp "$TOC_SRC" "$BUILD_DIR/toc-$MODE.typ"
     printf "#include \"toc-$MODE.typ\"\n\n"
   else

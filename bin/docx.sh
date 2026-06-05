@@ -3,8 +3,8 @@
 # docx.sh — Build a DOCX for publisher submission.
 #
 # Run from the workspace root:
-#   bash tools/scripts/docx.sh book1
-#   bash tools/scripts/docx.sh book2
+#   bash tools/bin/docx.sh book1
+#   bash tools/bin/docx.sh book2
 #
 # Output: dist/<BOOK_OUTPUT_BASENAME>-submission.docx
 #
@@ -14,7 +14,7 @@
 #   metadata-submission.yaml
 #   NN-*.md  (chapter files — no YAML metadata blocks inside them)
 #
-# Required support files in tools/scripts/:
+# Required support files in tools/bin/:
 #   build-template.py
 #   mdformat.lua
 #
@@ -64,12 +64,12 @@ fi
 
 BOOK_NAME="${BOOK#./}"
 BOOK_DIR="$ROOT/$BOOK_NAME"
-SCRIPTS_DIR="$ROOT/tools/scripts"
+BIN_DIR="$ROOT/tools/bin"
 DIST_DIR="$ROOT/dist"
 
-TEMPLATE_BUILDER="$SCRIPTS_DIR/build-template.py"
-TEMPLATE="$SCRIPTS_DIR/reference-template.docx"
-MDFORMAT="$SCRIPTS_DIR/mdformat.lua"
+TEMPLATE_BUILDER="$BIN_DIR/build-template.py"
+TEMPLATE="$BIN_DIR/reference-template.docx"
+MDFORMAT="$BIN_DIR/mdformat.lua"
 BOOK_ENV="$BOOK_DIR/book.env"
 
 # ── Validate inputs ───────────────────────────────────────────────────────────

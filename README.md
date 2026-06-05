@@ -34,7 +34,7 @@ book-tools/                 ← shared repo (this directory)
     post-create
 
 what-scripture-says/        ← your existing repo
-  scripts/                  ← submodule pointing to book-tools/scripts/
+  scripts/                  ← submodule pointing to book-tools/bin/
   book1/
     book.env
     front-matter-print.md
@@ -134,7 +134,7 @@ the simplest possible setup.
 
 ### Option 3 — Package install (overkill for now)
 
-Publish `book-tools/scripts/` as a Python package to PyPI or a private
+Publish `book-tools/bin/` as a Python package to PyPI or a private
 index. Each repo installs it via `pip install book-tools==x.y.z`. This
 is the correct answer for a team of ten. For two authors it is not worth
 the overhead.

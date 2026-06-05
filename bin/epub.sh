@@ -3,8 +3,8 @@
 # epub.sh — Build an EPUB from the manuscript source.
 #
 # Run from the workspace root:
-#   bash tools/scripts/epub.sh book1
-#   bash tools/scripts/epub.sh book2
+#   bash tools/bin/epub.sh book1
+#   bash tools/bin/epub.sh book2
 #
 # Output: dist/<BOOK_OUTPUT_BASENAME>.epub
 #
@@ -34,7 +34,7 @@ fi
 
 BOOK_NAME="${BOOK#./}"
 BOOK_DIR="$ROOT/$BOOK_NAME"
-SCRIPTS_DIR="$ROOT/tools/scripts"
+BIN_DIR="$ROOT/tools/bin"
 DIST_DIR="$ROOT/dist"
 
 BOOK_ENV="$BOOK_DIR/book.env"
@@ -168,7 +168,7 @@ pandoc \
     --toc \
     --toc-depth=1 \
     --split-level=1 \
-    --css="$SCRIPTS_DIR/epub.css" \
+    --css="$BIN_DIR/epub.css" \
     --metadata-file="${METADATA}" \
     --metadata title="${BOOK_TITLE}" \
     --metadata subtitle="${BOOK_SUBTITLE}" \

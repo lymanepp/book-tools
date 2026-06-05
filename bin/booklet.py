@@ -52,8 +52,8 @@ def _find_repo_root() -> Path:
 ROOT = _find_repo_root()
 BOOK_DIRS = {1: ROOT / "book1", 2: ROOT / "book2"}
 BOOKLETS_DIR = ROOT / "booklets"
-SCRIPTS_DIR = ROOT / "tools" / "scripts"
-PDF_SH = SCRIPTS_DIR / "pdf.sh"
+BIN_DIR = ROOT / "tools" / "scripts"
+PDF_SH = BIN_DIR / "pdf.sh"
 
 # ── config ───────────────────────────────────────────────────────────────────
 
