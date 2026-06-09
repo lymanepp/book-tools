@@ -18,6 +18,7 @@ local stringify = pandoc.utils.stringify
 traverse = "topdown"
 
 local next_para_kind = "first"
+local previous_block_was_quote = false
 
 local function raw_block(s)
   return pandoc.RawBlock("typst", s)
@@ -144,6 +145,7 @@ function Pandoc(doc)
 end
 
 function RawBlock(el)
+  previous_block_was_quote = false
   if el.format == "tex" then
     if el.text:match("\\\\newpage") or el.text:match("\\\\pagebreak") or el.text:match("\\\\clearpage") then
       return {}
@@ -153,6 +155,7 @@ function RawBlock(el)
 end
 
 function Header(el)
+  previous_block_was_quote = false
   local title = stringify(el.content)
   local id = el.identifier or ""
   next_para_kind = "first"
@@ -172,6 +175,7 @@ function Header(el)
 end
 
 function Para(el)
+  previous_block_was_quote = false
   local c = el.content
 
   if c[1] and c[1].t == "Strong" and strong_text_ends_runin(stringify(c[1].content)) and c[2] ~= nil then
@@ -236,7 +240,10 @@ function Note(el)
 end
 
 function BlockQuote(el)
-  local out = blocks_between("#book.quote[", el.content, "]")
+  local adjacent = previous_block_was_quote
+  previous_block_was_quote = true
+  local opening = adjacent and '#book.quote(adjacent: true)[' or '#book.quote['
+  local out = blocks_between(opening, el.content, "]")
   next_para_kind = "normal"   -- consume the "first" set by the preceding header
   return out
 end
@@ -305,6 +312,7 @@ local function dynamic_col_spec(el, cols)
 end
 
 function Table(el)
+  previous_block_was_quote = false
   local cols = table_col_count(el)
   local out = {}
 
@@ -484,10 +492,12 @@ local function render_list(items, marker)
 end
 
 function BulletList(el)
+  previous_block_was_quote = false
   return render_list(el.content, "-")
 end
 
 function OrderedList(el)
+  previous_block_was_quote = false
   return render_list(el.content, "+")
 end
 

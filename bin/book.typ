@@ -37,6 +37,7 @@
 #let _quote-indent   = 0.375in
 #let _quote-before   = 4.5pt
 #let _quote-after    = 4.5pt
+#let _quote-adjacent-before = 0.0pt  // 25% less gap between consecutive block quotes
 #let _list-spacing   = 13.2pt  // one full line (_leading * 2) between items
 #let _list-before    = 12pt
 #let _list-after     = 12pt
@@ -273,8 +274,12 @@
 #let heading(level: 4, title: "", id: "") = _kept-heading(title, size: _body-size, italic: false, before: 11pt, after: 4pt)
 
 // ── Block quote ──────────────────────────────────────────────────────────────
-#let quote(body) = {
-  v(_quote-before)
+#let quote(body, adjacent: false) = {
+  if adjacent {
+    v(_quote-adjacent-before)
+  } else {
+    v(_quote-before)
+  }
   block(width: 100%, inset: (left: _quote-indent, right: 0pt, top: 0pt, bottom: 0pt), breakable: true)[
     #set text(font: _body-font, size: _body-size, style: "normal", lang: "en", hyphenate: _hyphenate)
     #set par(
