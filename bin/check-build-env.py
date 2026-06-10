@@ -40,11 +40,13 @@ REQUIRED_PYTHON_MODULES = [
     "weasyprint",
 ]
 
-REQUIRED_FILES = [
-    Path("/usr/share/fonts/opentype/ebgaramond/EBGaramond12-Regular.otf"),
-    Path("/usr/share/fonts/opentype/ebgaramond/EBGaramond12-Italic.otf"),
-    Path("/usr/share/fonts/opentype/ebgaramond/EBGaramond12-Bold.otf"),
-]
+# Do not hard-code EB Garamond font file paths here.
+#
+# Debian and Ubuntu package the same font family under different directories,
+# extensions, and optical-size filenames. The build cares that the font family
+# resolves through fontconfig, because WeasyPrint resolves fonts that way when
+# cover templates use font-family names.
+REQUIRED_FILES: list[Path] = []
 
 
 def command_exists(name: str) -> bool:
@@ -82,7 +84,43 @@ def fc_match(font_name: str) -> str | None:
     )
     if result.returncode != 0:
         return None
-    return result.stdout.strip()
+
+    output = result.stdout.strip()
+    if not output:
+        return None
+
+    # Avoid false positives where fontconfig silently falls back to DejaVu,
+    # Liberation, or another generic serif font.
+    if font_name.lower() not in output.lower():
+        return None
+
+    return output
+
+
+def fc_match_style(font_name: str, style: str) -> str | None:
+    if not command_exists("fc-match"):
+        return None
+
+    pattern = f"{font_name}:style={style}"
+    result = subprocess.run(
+        ["fc-match", pattern],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    if result.returncode != 0:
+        return None
+
+    output = result.stdout.strip()
+    if not output:
+        return None
+
+    # Same fallback guard as fc_match.
+    if font_name.lower() not in output.lower():
+        return None
+
+    return output
 
 
 def main() -> int:
@@ -107,6 +145,14 @@ def main() -> int:
     eb_match = fc_match("EB Garamond")
     if not eb_match:
         errors.append("missing fontconfig match: EB Garamond")
+
+    eb_italic_match = fc_match_style("EB Garamond", "Italic")
+    if not eb_italic_match:
+        errors.append("missing fontconfig match: EB Garamond Italic")
+
+    eb_bold_match = fc_match_style("EB Garamond", "Bold")
+    if not eb_bold_match:
+        errors.append("missing fontconfig match: EB Garamond Bold")
 
     typst_version = command_output(["typst", "--version"]) if command_exists("typst") else "missing"
     pandoc_version = (
@@ -133,6 +179,10 @@ def main() -> int:
             print(f"  TeX Gyre:    {tex_gyre_match}", file=sys.stderr)
         if eb_match:
             print(f"  EB Garamond: {eb_match}", file=sys.stderr)
+        if eb_italic_match:
+            print(f"  EB Italic:   {eb_italic_match}", file=sys.stderr)
+        if eb_bold_match:
+            print(f"  EB Bold:     {eb_bold_match}", file=sys.stderr)
         return 1
 
     print("Build environment check OK")
@@ -141,6 +191,8 @@ def main() -> int:
     print(f"  weasyprint:  {weasyprint_version}")
     print(f"  TeX Gyre:    {tex_gyre_match}")
     print(f"  EB Garamond: {eb_match}")
+    print(f"  EB Italic:   {eb_italic_match}")
+    print(f"  EB Bold:     {eb_bold_match}")
     return 0
 
 
