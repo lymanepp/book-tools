@@ -25,7 +25,8 @@ book.env fields used by this renderer
   BOOK_TITLE                  Human-readable label in console output
   BOOK_OUTPUT_BASENAME        Output filename base
   BOOK_COVER_TEMPLATE         Optional; defaults to cover.html
-  BOOK_COVER_PAPER            Optional; cream or white; defaults to cream
+  BOOK_COVER_PAPER            Optional; cream or white; defaults to cream for B&W, white for premium color
+  BOOK_COVER_INTERIOR_TYPE    Optional; black_and_white or premium_color; defaults to black_and_white
   BOOK_COVER_SPINE_TEXT       Optional; auto, true, or false; defaults to auto
   BOOK_COVER_SPINE_TEXT_MIN_PAGES
                               Optional; defaults to 79 per KDP spine-text rule
@@ -67,7 +68,7 @@ KDP geometry
     height = KDP hardcover full-wrap height
     non-background artwork is then inset to KDP hardcover safe zones
 
-  Paper thickness and cover-size formulas live in kdp_cover_geometry.py,
+  Paper/interior thickness and cover-size formulas live in kdp_cover_geometry.py,
   which is unit-tested against KDP's cover-calculator output.
 
   Default trim: 6.0 × 9.0 inches.
@@ -85,7 +86,14 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from kdp_cover_geometry import CSS_DPI, PAPER_THICKNESS as PAPER, cover_geometry_tokens
+from kdp_cover_geometry import (
+    CSS_DPI,
+    SUPPORTED_INTERIOR_TYPES,
+    SUPPORTED_PAPERS,
+    cover_geometry_tokens,
+    normalize_interior_type,
+    normalize_paper,
+)
 
 
 def page_count_from_pdf(path: Path) -> int:
@@ -130,6 +138,7 @@ class CoverTarget:
     title: str
     output_basename: str
     default_paper: str
+    default_interior_type: str
 
     @property
     def label(self) -> str:
@@ -391,9 +400,18 @@ def load_cover_target(book_arg: str | Path, workspace: Path) -> CoverTarget:
     if not template.is_file():
         sys.exit(f"Cover template not found: {template}\nSet BOOK_COVER_TEMPLATE in {env_path}, or add cover.html to the book directory.")
 
-    paper = cfg.get("BOOK_COVER_PAPER", "cream") or "cream"
-    if paper not in PAPER:
-        sys.exit(f"{env_path} has unsupported BOOK_COVER_PAPER={paper!r}. Use cream or white.")
+    raw_interior = cfg.get("BOOK_COVER_INTERIOR_TYPE", "black_and_white") or "black_and_white"
+    try:
+        interior_type = normalize_interior_type(raw_interior)
+    except ValueError as e:
+        sys.exit(f"{env_path} has unsupported BOOK_COVER_INTERIOR_TYPE={raw_interior!r}. {e}")
+
+    default_paper_name = "white" if interior_type == "premium_color" else "cream"
+    raw_paper = cfg.get("BOOK_COVER_PAPER", default_paper_name) or default_paper_name
+    try:
+        paper = normalize_paper(raw_paper)
+    except ValueError as e:
+        sys.exit(f"{env_path} has unsupported BOOK_COVER_PAPER={raw_paper!r}. {e}")
 
     return CoverTarget(
         book_dir=book_dir,
@@ -402,6 +420,7 @@ def load_cover_target(book_arg: str | Path, workspace: Path) -> CoverTarget:
         title=cfg["BOOK_TITLE"],
         output_basename=cfg["BOOK_OUTPUT_BASENAME"],
         default_paper=paper,
+        default_interior_type=interior_type,
     )
 
 
@@ -710,9 +729,9 @@ def px(inches: float) -> float:
     return round(inches * CSS_DPI, 1)
 
 
-def geo(pages: int, paper: str = "cream", binding: str = "paperback") -> dict:
+def geo(pages: int, paper: str = "cream", binding: str = "paperback", interior_type: str = "black_and_white") -> dict:
     """Return geometry tokens for paperback or hardcover KDP cover rendering."""
-    return cover_geometry_tokens(pages=pages, paper=paper, binding=binding)
+    return cover_geometry_tokens(pages=pages, paper=paper, binding=binding, interior_type=interior_type)
 
 
 def inject_tokens(html: str, geometry: dict, target: CoverTarget) -> str:
@@ -767,9 +786,12 @@ def resolve_pages(target: CoverTarget, args: argparse.Namespace, workspace: Path
     return pages
 
 
-def render(target: CoverTarget, pages: int, paper: str, binding: str, preview: bool,
+def render(target: CoverTarget, pages: int, paper: str, interior_type: str, binding: str, preview: bool,
            outdir: str | Path, workspace: Path, requested_renderer: str) -> None:
-    g = geo(pages, paper, binding)
+    try:
+        g = geo(pages, paper, binding, interior_type)
+    except ValueError as e:
+        sys.exit(str(e))
     spine_cfg = resolve_spine_text_config(target, pages, g)
     g["SPINE_TEXT_DISPLAY"] = "flex" if spine_cfg.show else "none"
     g["SPINE_TEXT_SAFE_PAD"] = spine_cfg.safe_margin_px
@@ -813,7 +835,7 @@ def render(target: CoverTarget, pages: int, paper: str, binding: str, preview: b
     print(f"Dir:     {target.book_dir.relative_to(workspace) if target.book_dir.is_relative_to(workspace) else target.book_dir}")
     print(f"Template:{' ':1}{target.template.relative_to(workspace) if target.template.is_relative_to(workspace) else target.template}")
     print(f"Binding: {binding}  ({g['binding_note']})")
-    print(f"Pages:   {pages}  ({paper} paper)")
+    print(f"Pages:   {pages}  ({interior_type}, {paper} paper)")
     print(f"Spine:   {g['spine_in']:.4f}\"  ({g['SPINE']} CSS px)")
     print(f"Spine text: {spine_cfg.status}  (policy={spine_cfg.policy}, min_pages={spine_cfg.min_pages}, edge_margin={spine_cfg.safe_margin_in:.3f}in)")
     if spine_cfg.show:
@@ -854,7 +876,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("book_dir", nargs="?", help="Book/booklet directory containing book.env and cover.html, e.g. book1 or booklets/marriage-and-family.")
     ap.add_argument("--pdf", default=None, metavar="FILE", help="Interior PDF; page count is read from it automatically. Defaults to dist/<BOOK_OUTPUT_BASENAME>-print.pdf.")
-    ap.add_argument("--paper", choices=["cream", "white"], default=None, help="Paper color/thickness. Defaults to BOOK_COVER_PAPER or cream.")
+    ap.add_argument("--paper", choices=list(SUPPORTED_PAPERS), default=None, help="Paper color/thickness. Defaults to BOOK_COVER_PAPER, or cream for B&W / white for premium color.")
+    ap.add_argument("--interior-type", choices=list(SUPPORTED_INTERIOR_TYPES), default=None, help="KDP interior type. Defaults to BOOK_COVER_INTERIOR_TYPE or black_and_white.")
     ap.add_argument("--binding", choices=["paperback", "hardcover"], default="paperback")
     ap.add_argument("--all-bindings", action="store_true", help="Render both paperback and hardcover for each selected book.")
     ap.add_argument("--preview", action="store_true")
@@ -884,9 +907,10 @@ def main() -> None:
 
     for target in targets:
         pages = resolve_pages(target, args, workspace)
+        interior_type = args.interior_type or target.default_interior_type
         paper = args.paper or target.default_paper
         for binding in bindings:
-            render(target, pages, paper, binding, args.preview, args.output_dir, workspace, args.renderer)
+            render(target, pages, paper, interior_type, binding, args.preview, args.output_dir, workspace, args.renderer)
     print("\nDone.")
 
 

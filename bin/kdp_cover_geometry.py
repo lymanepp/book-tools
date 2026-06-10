@@ -3,18 +3,19 @@
 
 This module is intentionally standalone: it has no dependency on the cover
 renderer, and it can be unit-tested directly against KDP cover-calculator
-numbers.  The renderer should consume this module rather than reimplementing
+numbers. The renderer should consume this module rather than reimplementing
 KDP geometry inline.
 
 The formulas below are calibrated from KDP's cover calculator for:
   - Binding: paperback / hardcover case laminate
-  - Interior: black & white
-  - Paper: white / cream
+  - Interior: black & white / premium color
+  - Paper: white / cream where KDP allows the combination
   - Direction: left-to-right
   - Units: inches
 
-The formulas are parameterized by trim size.  The checked-in tests currently
-validate the 6×9 values used by the book pipeline.
+The checked-in tests validate the 6×9 values used by the book pipeline.
+The formulas are parameterized by trim size, with the current constants derived
+from KDP's 6×9 calculator output.
 """
 
 from __future__ import annotations
@@ -24,14 +25,43 @@ from typing import Literal
 
 Binding = Literal["paperback", "hardcover"]
 Paper = Literal["white", "cream"]
-InteriorType = Literal["black_and_white"]
+InteriorType = Literal["black_and_white", "premium_color"]
 ReadingDirection = Literal["left_to_right"]
 
 CSS_DPI = 96
 
+SUPPORTED_BINDINGS = ("paperback", "hardcover")
+SUPPORTED_PAPERS = ("white", "cream")
+SUPPORTED_INTERIOR_TYPES = ("black_and_white", "premium_color")
+SUPPORTED_READING_DIRECTIONS = ("left_to_right",)
+
+# KDP paper-stack thickness, inches/page. The keys intentionally include the
+# interior type because color interiors use a different stock from B&W white.
 PAPER_THICKNESS = {
-    "white": 0.002252,
-    "cream": 0.002500,
+    ("black_and_white", "white"): 0.002252,
+    ("black_and_white", "cream"): 0.002500,
+    ("premium_color", "white"): 0.002347,
+}
+
+INTERIOR_ALIASES = {
+    "black_and_white": "black_and_white",
+    "black-and-white": "black_and_white",
+    "black and white": "black_and_white",
+    "black & white": "black_and_white",
+    "b&w": "black_and_white",
+    "bw": "black_and_white",
+    "premium_color": "premium_color",
+    "premium-color": "premium_color",
+    "premium color": "premium_color",
+}
+
+PAPER_ALIASES = {
+    "white": "white",
+    "white_paper": "white",
+    "white paper": "white",
+    "cream": "cream",
+    "cream_paper": "cream",
+    "cream paper": "cream",
 }
 
 # Paperback KDP constants.
@@ -60,6 +90,7 @@ SPINE_MARGIN = 0.0625
 @dataclass(frozen=True)
 class KdpCoverGeometry:
     binding: Binding
+    interior_type: InteriorType
     paper: Paper
     page_count: int
     trim_width_in: float
@@ -91,8 +122,8 @@ class KdpCoverGeometry:
     barcode_margin_width_in: float
     barcode_margin_height_in: float
 
-    # Renderer-layout helpers.  These describe where the renderer's panels
-    # begin on the full-wrap canvas.  For hardcover, the front/back faces are
+    # Renderer-layout helpers. These describe where the renderer's panels
+    # begin on the full-wrap canvas. For hardcover, the front/back faces are
     # trim-sized faces separated from the spine by one hinge panel per side.
     outer_left_in: float
     outer_top_in: float
@@ -131,14 +162,43 @@ def px(inches: float) -> float:
     return round(inches * CSS_DPI, 1)
 
 
-def _validate(binding: str, paper: str, page_count: int, trim_size: tuple[float, float],
-              interior_type: str, reading_direction: str) -> tuple[Binding, Paper, float, float]:
-    if binding not in {"paperback", "hardcover"}:
+def normalize_interior_type(interior_type: str) -> InteriorType:
+    normalized = INTERIOR_ALIASES.get(str(interior_type).strip().lower())
+    if normalized is None:
+        allowed = ", ".join(SUPPORTED_INTERIOR_TYPES)
+        raise ValueError(f"Unsupported interior type: {interior_type!r}; use one of: {allowed}")
+    return normalized  # type: ignore[return-value]
+
+
+def normalize_paper(paper: str) -> Paper:
+    normalized = PAPER_ALIASES.get(str(paper).strip().lower())
+    if normalized is None:
+        allowed = ", ".join(SUPPORTED_PAPERS)
+        raise ValueError(f"Unsupported paper type: {paper!r}; use one of: {allowed}")
+    return normalized  # type: ignore[return-value]
+
+
+def _validate(
+    binding: str,
+    paper: str,
+    page_count: int,
+    trim_size: tuple[float, float],
+    interior_type: str,
+    reading_direction: str,
+) -> tuple[Binding, Paper, InteriorType, float, float]:
+    if binding not in SUPPORTED_BINDINGS:
         raise ValueError(f"Unsupported binding: {binding!r}; use paperback or hardcover")
-    if paper not in PAPER_THICKNESS:
-        raise ValueError(f"Unsupported paper type: {paper!r}; use white or cream")
-    if interior_type != "black_and_white":
-        raise ValueError("Only black_and_white interiors are modeled by this calculator")
+    binding_t: Binding = binding  # type: ignore[assignment]
+
+    paper_t = normalize_paper(paper)
+    interior_t = normalize_interior_type(interior_type)
+
+    if (interior_t, paper_t) not in PAPER_THICKNESS:
+        supported = ", ".join(f"{i}/{p}" for i, p in sorted(PAPER_THICKNESS))
+        raise ValueError(
+            f"Unsupported interior/paper combination: {interior_t}/{paper_t}. "
+            f"Supported combinations: {supported}"
+        )
     if reading_direction != "left_to_right":
         raise ValueError("Only left_to_right cover geometry is modeled by this calculator")
     if not isinstance(page_count, int) or page_count < 1:
@@ -148,7 +208,7 @@ def _validate(binding: str, paper: str, page_count: int, trim_size: tuple[float,
     trim_w, trim_h = float(trim_size[0]), float(trim_size[1])
     if trim_w <= 0 or trim_h <= 0:
         raise ValueError(f"trim_size values must be positive, got {trim_size!r}")
-    return binding, paper, trim_w, trim_h  # type: ignore[return-value]
+    return binding_t, paper_t, interior_t, trim_w, trim_h
 
 
 def calculate_kdp_cover_geometry(
@@ -166,10 +226,10 @@ def calculate_kdp_cover_geometry(
     same concepts: binding type, interior type, paper type, reading direction,
     trim size, and formatted page count.
     """
-    binding_t, paper_t, trim_w, trim_h = _validate(
+    binding_t, paper_t, interior_t, trim_w, trim_h = _validate(
         binding, paper, page_count, trim_size, interior_type, reading_direction
     )
-    thickness = PAPER_THICKNESS[paper_t]
+    thickness = PAPER_THICKNESS[(interior_t, paper_t)]
     paper_stack_spine = page_count * thickness
 
     if binding_t == "paperback":
@@ -185,6 +245,7 @@ def calculate_kdp_cover_geometry(
         spine_safe_h = trim_h - 2 * PB_MARGIN
         return KdpCoverGeometry(
             binding=binding_t,
+            interior_type=interior_t,
             paper=paper_t,
             page_count=page_count,
             trim_width_in=trim_w,
@@ -230,6 +291,7 @@ def calculate_kdp_cover_geometry(
     spine_safe_h = front_h - 2 * HC_MARGIN
     return KdpCoverGeometry(
         binding=binding_t,
+        interior_type=interior_t,
         paper=paper_t,
         page_count=page_count,
         trim_width_in=trim_w,
@@ -271,6 +333,7 @@ def cover_geometry_tokens(
     paper: str = "cream",
     binding: str = "paperback",
     trim_size: tuple[float, float] = (6.0, 9.0),
+    interior_type: str = "black_and_white",
 ) -> dict[str, float | int | str]:
     """Return the legacy renderer token dictionary for a KDP geometry."""
     g = calculate_kdp_cover_geometry(
@@ -278,6 +341,7 @@ def cover_geometry_tokens(
         paper=paper,
         page_count=pages,
         trim_size=trim_size,
+        interior_type=interior_type,
     )
 
     total_w_px = px(g.full_cover_width_in)
@@ -299,6 +363,7 @@ def cover_geometry_tokens(
     return {
         "binding": g.binding,
         "binding_note": "paperback bleed" if g.binding == "paperback" else "hardcover case laminate",
+        "interior_type": g.interior_type,
         "PAGES": g.page_count,
         "spine_in": g.spine_width_in,
         "paper_stack_spine_in": g.paper_stack_spine_width_in,
@@ -333,10 +398,18 @@ def cover_geometry_tokens(
 __all__ = [
     "Binding",
     "Paper",
+    "InteriorType",
+    "ReadingDirection",
     "CSS_DPI",
     "PAPER_THICKNESS",
+    "SUPPORTED_BINDINGS",
+    "SUPPORTED_PAPERS",
+    "SUPPORTED_INTERIOR_TYPES",
+    "SUPPORTED_READING_DIRECTIONS",
     "KdpCoverGeometry",
     "calculate_kdp_cover_geometry",
     "cover_geometry_tokens",
+    "normalize_interior_type",
+    "normalize_paper",
     "px",
 ]
