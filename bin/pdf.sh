@@ -8,7 +8,7 @@ BOOK="${1:-}"
 MODE="print"
 
 if [[ -z "$BOOK" ]]; then
-  echo "Usage: $0 book1|book2" >&2
+  echo "Usage: $0 <book-dir>" >&2
   exit 1
 fi
 
@@ -40,15 +40,13 @@ fi
 # shellcheck disable=SC1090
 source "$BOOK_ENV"
 
-for var in BOOK_TITLE BOOK_SUBTITLE BOOK_OUTPUT_BASENAME; do
+for var in BOOK_TITLE BOOK_SUBTITLE BOOK_OUTPUT_BASENAME BOOK_AUTHOR BOOK_COPYRIGHT_YEAR; do
   if [[ -z "${!var:-}" ]]; then
     echo "ERROR: $BOOK_ENV must define $var." >&2
     exit 1
   fi
 done
 
-: "${BOOK_AUTHOR:=Lyman Epp}"
-: "${BOOK_COPYRIGHT_YEAR:=2026}"
 : "${BOOK_HARDCOVER_ISBN:=}"
 : "${BOOK_PAPERBACK_ISBN:=}"
 

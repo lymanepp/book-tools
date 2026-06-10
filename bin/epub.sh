@@ -28,7 +28,7 @@ cd "$ROOT"
 BOOK="${1:-}"
 
 if [[ -z "$BOOK" ]]; then
-    echo "Usage: $0 book1|book2" >&2
+    echo "Usage: $0 <book-dir>" >&2
     exit 1
 fi
 
@@ -53,10 +53,12 @@ fi
 # shellcheck disable=SC1090
 source "$BOOK_ENV"
 
-if [[ -z "${BOOK_TITLE:-}" || -z "${BOOK_SUBTITLE:-}" || -z "${BOOK_OUTPUT_BASENAME:-}" ]]; then
-    echo "ERROR: $BOOK_ENV must define BOOK_TITLE, BOOK_SUBTITLE, and BOOK_OUTPUT_BASENAME." >&2
-    exit 1
-fi
+for var in BOOK_TITLE BOOK_SUBTITLE BOOK_OUTPUT_BASENAME BOOK_AUTHOR BOOK_COPYRIGHT_YEAR; do
+    if [[ -z "${!var:-}" ]]; then
+        echo "ERROR: $BOOK_ENV must define $var." >&2
+        exit 1
+    fi
+done
 
 for required in "$METADATA" "$FRONT_MATTER"; do
     if [[ ! -f "$required" ]]; then
@@ -67,7 +69,7 @@ done
 
 mkdir -p "$DIST_DIR"
 OUTPUT="$DIST_DIR/${BOOK_OUTPUT_BASENAME}.epub"
-AUTHOR="${BOOK_AUTHOR:-Lyman Epp}"
+AUTHOR="$BOOK_AUTHOR"
 STRIP_FOOTNOTES="${EPUB_STRIP_FOOTNOTES:-0}"
 
 # ── Collect chapter inputs ────────────────────────────────────────────────────
@@ -104,7 +106,7 @@ render_front_matter() {
     BOOK_SUBTITLE="$BOOK_SUBTITLE" \
     BOOK_OUTPUT_BASENAME="$BOOK_OUTPUT_BASENAME" \
     BOOK_AUTHOR="$AUTHOR" \
-    BOOK_COPYRIGHT_YEAR="${BOOK_COPYRIGHT_YEAR:-}" \
+    BOOK_COPYRIGHT_YEAR="$BOOK_COPYRIGHT_YEAR" \
     BOOK_HARDCOVER_ISBN="${BOOK_HARDCOVER_ISBN:-}" \
     BOOK_PAPERBACK_ISBN="${BOOK_PAPERBACK_ISBN:-}" \
     python3 - <<'PY'

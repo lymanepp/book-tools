@@ -11,7 +11,6 @@ Usage
   python3 tools/bin/render-cover.py book1 --binding paperback
   python3 tools/bin/render-cover.py book2 --binding hardcover
   python3 tools/bin/render-cover.py book1 --pdf dist/what-scripture-says-vol1-print.pdf
-  python3 tools/bin/render-cover.py book1 --pages 315
   python3 tools/bin/render-cover.py booklets/marriage-and-family --pdf dist/marriage-and-family-print.pdf
   python3 tools/bin/render-cover.py booklets/marriage-and-family --all-bindings
   python3 tools/bin/render-cover.py --all --all-bindings
@@ -25,15 +24,26 @@ book.env fields used by this renderer
 ─────────────────────────────────────
   BOOK_TITLE                  Human-readable label in console output
   BOOK_OUTPUT_BASENAME        Output filename base
-  BOOK_COVER_PAGE_COUNT       Fallback page count when --pages/--pdf is omitted
   BOOK_COVER_TEMPLATE         Optional; defaults to cover.html
   BOOK_COVER_PAPER            Optional; cream or white; defaults to cream
+  BOOK_COVER_SPINE_TEXT       Optional; auto, true, or false; defaults to auto
+  BOOK_COVER_SPINE_TEXT_MIN_PAGES
+                              Optional; defaults to 79 per KDP spine-text rule
+  BOOK_COVER_SPINE_SAFE_MARGIN_IN
+                              Optional; defaults to 0.50in; minimum 0.375in
+  BOOK_COVER_SPINE_SERIES     Optional; defaults to BOOK_TITLE
+  BOOK_COVER_SPINE_TITLE      Optional; defaults to BOOK_SUBTITLE or BOOK_TITLE
+  BOOK_COVER_SPINE_AUTHOR     Optional; defaults to BOOK_AUTHOR
 
-Page count resolution order
-────────────────────────────
-  1. --pages N
-  2. --pdf FILE
-  3. BOOK_COVER_PAGE_COUNT from book.env
+  Spine font sizes are calculated from the actual spine width and text length.
+  Wider books get larger, more readable spine type; narrow spines are clamped
+  down so the text stays inside the spine panel.
+
+Page count resolution
+─────────────────────
+  The renderer always reads the page count from an interior PDF.
+  By default it uses dist/{{BOOK_OUTPUT_BASENAME}}-print.pdf.
+  Use --pdf FILE only when the interior PDF is somewhere else.
 
 Output naming
 ─────────────
@@ -111,6 +121,18 @@ CSS_DPI = 96
 HC_OUTER = 0.635
 HC_HINGE = 0.197
 HC_VERTICAL_OUTER = 0.7085
+KDP_SPINE_TEXT_MIN_PAGES = 79
+KDP_SPINE_TEXT_MIN_EDGE_MARGIN_IN = 0.375
+DEFAULT_SPINE_TEXT_EDGE_MARGIN_IN = 0.50
+
+# Spine type is sized dynamically. These are CSS-pixel bounds used after
+# the real spine width has been calculated from the interior PDF page count.
+SPINE_TITLE_FONT_MIN_PX = 7.5
+SPINE_TITLE_FONT_MAX_PX = 19.0
+SPINE_SERIES_FONT_MIN_PX = 7.0
+SPINE_SERIES_FONT_MAX_PX = 13.5
+SPINE_AUTHOR_FONT_MIN_PX = 7.0
+SPINE_AUTHOR_FONT_MAX_PX = 12.0
 
 
 @dataclass(frozen=True)
@@ -120,7 +142,6 @@ class CoverTarget:
     template: Path
     title: str
     output_basename: str
-    default_pages: int | None
     default_paper: str
 
     @property
@@ -131,6 +152,23 @@ class CoverTarget:
     def safe_id(self) -> str:
         rel = str(self.book_dir).replace(os.sep, "-")
         return re.sub(r"[^A-Za-z0-9_.-]+", "-", rel).strip("-._") or "cover"
+
+
+@dataclass(frozen=True)
+class SpineTextConfig:
+    show: bool
+    policy: str
+    min_pages: int
+    safe_margin_in: float
+    safe_margin_px: float
+    title_font_px: float
+    series_font_px: float
+    author_font_px: float
+    rule_margin_px: float
+
+    @property
+    def status(self) -> str:
+        return "shown" if self.show else "hidden"
 
 
 def git_workspace_root() -> Path:
@@ -192,6 +230,159 @@ def optional_int(value: str | None, name: str, env_path: Path) -> int | None:
     return parsed
 
 
+def optional_float(value: str | None, name: str, env_path: Path) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        parsed = float(value)
+    except ValueError:
+        sys.exit(f"{env_path} must define {name} as a number, got: {value!r}")
+    if parsed <= 0:
+        sys.exit(f"{env_path} must define {name} as a positive number, got: {parsed}")
+    return parsed
+
+
+def clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def spine_env_strings(target: CoverTarget) -> dict[str, str]:
+    """Return spine strings, with useful metadata-driven fallbacks."""
+    cfg = load_env(target.env_path)
+    series = cfg.get("BOOK_COVER_SPINE_SERIES") or cfg.get("BOOK_TITLE") or target.title
+    title = cfg.get("BOOK_COVER_SPINE_TITLE") or cfg.get("BOOK_SUBTITLE") or target.title
+    author = cfg.get("BOOK_COVER_SPINE_AUTHOR") or cfg.get("BOOK_AUTHOR") or ""
+    return {
+        "BOOK_COVER_SPINE_SERIES": series,
+        "BOOK_COVER_SPINE_TITLE": title,
+        "BOOK_COVER_SPINE_AUTHOR": author,
+    }
+
+
+def estimate_spine_text_width(series: str, title: str, author: str,
+                              series_font: float, title_font: float,
+                              author_font: float, rule_margin: float) -> float:
+    """Estimate the horizontal length of rotated spine text in CSS pixels.
+
+    This intentionally errs slightly high. It is not a font engine; it is a
+    guardrail that scales the spine typography down before the PDF renderer can
+    clip long strings on short/narrow spines.
+    """
+    def text_width(text: str, font_px: float, avg_em: float, letterspace_em: float) -> float:
+        text = text.strip()
+        if not text:
+            return 0.0
+        # letter-spacing adds after most characters in CSS. Approximate it.
+        return (len(text) * avg_em * font_px) + (max(0, len(text) - 1) * letterspace_em * font_px)
+
+    series_w = text_width(series.upper(), series_font, 0.54, 0.10)
+    title_w = text_width(title, title_font, 0.50, 0.02)
+    author_w = text_width(author.upper(), author_font, 0.54, 0.14)
+    # Two flexible rules, each with left/right margins and a small visible rule.
+    rules_w = (4 * rule_margin) + 28
+    return series_w + title_w + author_w + rules_w
+
+
+def spine_font_layout(target: CoverTarget, spine_width_px: float, safe_margin_px: float,
+                      panel_height_px: float) -> dict[str, float]:
+    """Choose readable spine font sizes while respecting narrow spines.
+
+    The font height is constrained by the physical spine width. A second pass
+    estimates length along the spine and scales down if the series/title/author
+    combination would crowd the KDP top/bottom safety margins.
+    """
+    strings = spine_env_strings(target)
+
+    # Primary clamp: font height cannot exceed what the spine width can carry.
+    title_font = clamp(spine_width_px * 0.30, SPINE_TITLE_FONT_MIN_PX, SPINE_TITLE_FONT_MAX_PX)
+    series_font = clamp(title_font * 0.72, SPINE_SERIES_FONT_MIN_PX, SPINE_SERIES_FONT_MAX_PX)
+    author_font = clamp(title_font * 0.64, SPINE_AUTHOR_FONT_MIN_PX, SPINE_AUTHOR_FONT_MAX_PX)
+    rule_margin = clamp(title_font * 0.55, 4.0, 10.0)
+
+    available_len = max(1.0, panel_height_px - (2 * safe_margin_px))
+    estimated = estimate_spine_text_width(
+        strings["BOOK_COVER_SPINE_SERIES"],
+        strings["BOOK_COVER_SPINE_TITLE"],
+        strings["BOOK_COVER_SPINE_AUTHOR"],
+        series_font,
+        title_font,
+        author_font,
+        rule_margin,
+    )
+
+    if estimated > available_len:
+        scale = available_len / estimated
+        title_font = clamp(title_font * scale, SPINE_TITLE_FONT_MIN_PX, SPINE_TITLE_FONT_MAX_PX)
+        series_font = clamp(series_font * scale, SPINE_SERIES_FONT_MIN_PX, SPINE_SERIES_FONT_MAX_PX)
+        author_font = clamp(author_font * scale, SPINE_AUTHOR_FONT_MIN_PX, SPINE_AUTHOR_FONT_MAX_PX)
+        rule_margin = clamp(rule_margin * scale, 3.0, 10.0)
+
+    return {
+        "title_font_px": round(title_font, 1),
+        "series_font_px": round(series_font, 1),
+        "author_font_px": round(author_font, 1),
+        "rule_margin_px": round(rule_margin, 1),
+    }
+
+
+def resolve_spine_text_config(target: CoverTarget, pages: int, geometry: dict) -> SpineTextConfig:
+    """Resolve KDP spine-text policy from book.env and actual page count.
+
+    KDP requires at least 79 pages for spine text and requires spine text
+    to sit at least 0.375in from the top and bottom cover edges. This
+    defaults to a more conservative 0.50in edge margin.
+    """
+    cfg = load_env(target.env_path)
+    policy = (cfg.get("BOOK_COVER_SPINE_TEXT", "auto") or "auto").strip().lower()
+    aliases = {
+        "1": "true", "yes": "true", "y": "true", "on": "true",
+        "0": "false", "no": "false", "n": "false", "off": "false",
+    }
+    policy = aliases.get(policy, policy)
+    if policy not in {"auto", "true", "false"}:
+        sys.exit(
+            f"{target.env_path} has unsupported BOOK_COVER_SPINE_TEXT={policy!r}. "
+            "Use auto, true, or false."
+        )
+
+    min_pages = optional_int(
+        cfg.get("BOOK_COVER_SPINE_TEXT_MIN_PAGES"),
+        "BOOK_COVER_SPINE_TEXT_MIN_PAGES",
+        target.env_path,
+    ) or KDP_SPINE_TEXT_MIN_PAGES
+
+    safe_margin_in = optional_float(
+        cfg.get("BOOK_COVER_SPINE_SAFE_MARGIN_IN"),
+        "BOOK_COVER_SPINE_SAFE_MARGIN_IN",
+        target.env_path,
+    ) or DEFAULT_SPINE_TEXT_EDGE_MARGIN_IN
+    safe_margin_in = max(safe_margin_in, KDP_SPINE_TEXT_MIN_EDGE_MARGIN_IN)
+
+    if policy == "true":
+        show = True
+    elif policy == "false":
+        show = False
+    else:
+        show = pages >= min_pages
+
+    safe_margin_px = px(safe_margin_in)
+    fonts = spine_font_layout(
+        target,
+        spine_width_px=float(geometry["SPINE"]),
+        safe_margin_px=safe_margin_px,
+        panel_height_px=float(geometry["PANEL_H"]),
+    )
+
+    return SpineTextConfig(
+        show=show,
+        policy=policy,
+        min_pages=min_pages,
+        safe_margin_in=safe_margin_in,
+        safe_margin_px=safe_margin_px,
+        **fonts,
+    )
+
+
 def load_cover_target(book_arg: str | Path, workspace: Path) -> CoverTarget:
     book_dir = resolve_under_workspace(book_arg, workspace)
     env_path = book_dir / "book.env"
@@ -217,15 +408,12 @@ def load_cover_target(book_arg: str | Path, workspace: Path) -> CoverTarget:
     if paper not in PAPER:
         sys.exit(f"{env_path} has unsupported BOOK_COVER_PAPER={paper!r}. Use cream or white.")
 
-    pages = optional_int(cfg.get("BOOK_COVER_PAGE_COUNT"), "BOOK_COVER_PAGE_COUNT", env_path)
-
     return CoverTarget(
         book_dir=book_dir,
         env_path=env_path,
         template=template,
         title=cfg["BOOK_TITLE"],
         output_basename=cfg["BOOK_OUTPUT_BASENAME"],
-        default_pages=pages,
         default_paper=paper,
     )
 
@@ -447,6 +635,31 @@ def inject_hardcover_safe_layout(html: str, g: dict) -> str:
     return html.replace("</style>", css + "\n</style>", 1)
 
 
+def inject_spine_text_layout(html: str, spine_cfg: SpineTextConfig) -> str:
+    """Apply KDP spine-text visibility and top/bottom safety margins.
+
+    The rotated spine container's left/right padding corresponds to physical
+    top/bottom clearance on the finished spine. This late CSS override protects
+    templates that still have older hard-coded spine padding.
+    """
+    display = "flex" if spine_cfg.show else "none"
+    css = f"""
+
+/* ── KDP SPINE-TEXT SAFETY / RESPONSIVE TYPE OVERRIDES ── */
+.spine-rotator {{
+  box-sizing: border-box;
+  display: {display} !important;
+  padding-left: {spine_cfg.safe_margin_px}px !important;
+  padding-right: {spine_cfg.safe_margin_px}px !important;
+}}
+.spine-series {{ font-size: {spine_cfg.series_font_px}px !important; }}
+.spine-title  {{ font-size: {spine_cfg.title_font_px}px !important; }}
+.spine-author {{ font-size: {spine_cfg.author_font_px}px !important; }}
+.spine-rule   {{ margin-left: {spine_cfg.rule_margin_px}px !important; margin-right: {spine_cfg.rule_margin_px}px !important; }}
+"""
+    return html.replace("</style>", css + "\n</style>", 1)
+
+
 def build_wkhtmltopdf_cmd(exe: str, tmp: Path, out: Path, g: dict, dpi: int) -> list[str]:
     return [
         exe,
@@ -532,6 +745,7 @@ def geo(pages: int, paper: str = "cream", binding: str = "paperback") -> dict:
     return {
         "binding": binding,
         "binding_note": binding_note,
+        "PAGES": pages,
         "spine_in": spine_in,
         "total_w_in": total_w_in,
         "total_h_in": total_h_in,
@@ -575,6 +789,9 @@ def inject_tokens(html: str, geometry: dict, target: CoverTarget) -> str:
     env_values = load_env(target.env_path)
     replacements.update(env_values)
 
+    # Spine text has metadata-driven defaults so templates can be generic.
+    replacements.update(spine_env_strings(target))
+
     def repl(match: re.Match[str]) -> str:
         key = match.group(1).strip()
         value = replacements.get(key)
@@ -585,27 +802,38 @@ def inject_tokens(html: str, geometry: dict, target: CoverTarget) -> str:
     return re.sub(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}", repl, html)
 
 
+def default_interior_pdf(target: CoverTarget, workspace: Path) -> Path:
+    """Return the conventional print-PDF path for this book target."""
+    return workspace / "dist" / f"{target.output_basename}-print.pdf"
+
+
+def resolve_interior_pdf(target: CoverTarget, args: argparse.Namespace, workspace: Path) -> Path:
+    """Resolve the interior PDF whose real page count drives cover geometry."""
+    pdf = resolve_under_workspace(args.pdf, workspace) if args.pdf else default_interior_pdf(target, workspace)
+    if not pdf.is_file():
+        expected = default_interior_pdf(target, workspace)
+        raise SystemExit(
+            f"Interior PDF required to calculate cover geometry: {pdf}\n"
+            "Build the content PDF first, then render the cover. For the default "
+            f"layout this renderer expects: {expected}\n"
+            "Use --pdf FILE only if the interior PDF is in a nonstandard location."
+        )
+    return pdf
+
+
 def resolve_pages(target: CoverTarget, args: argparse.Namespace, workspace: Path) -> int:
-    if args.pages is not None:
-        return args.pages
-    if args.pdf:
-        pdf = resolve_under_workspace(args.pdf, workspace)
-        if not pdf.is_file():
-            raise SystemExit(f"PDF not found: {pdf}")
-        pages = page_count_from_pdf(pdf)
-        print(f"Page count from PDF: {pages}  ({pdf})")
-        return pages
-    if target.default_pages is not None:
-        return target.default_pages
-    raise SystemExit(
-        f"No page count supplied for {target.book_dir}.\n"
-        "Use --pages, use --pdf, or add BOOK_COVER_PAGE_COUNT to book.env."
-    )
+    pdf = resolve_interior_pdf(target, args, workspace)
+    pages = page_count_from_pdf(pdf)
+    print(f"Page count from PDF: {pages}  ({pdf})")
+    return pages
 
 
 def render(target: CoverTarget, pages: int, paper: str, binding: str, preview: bool,
            outdir: str | Path, workspace: Path, requested_renderer: str) -> None:
     g = geo(pages, paper, binding)
+    spine_cfg = resolve_spine_text_config(target, pages, g)
+    g["SPINE_TEXT_DISPLAY"] = "flex" if spine_cfg.show else "none"
+    g["SPINE_TEXT_SAFE_PAD"] = spine_cfg.safe_margin_px
 
     renderer_name, renderer_exe = choose_renderer(requested_renderer)
 
@@ -614,6 +842,8 @@ def render(target: CoverTarget, pages: int, paper: str, binding: str, preview: b
 
     if binding == "hardcover":
         html = inject_hardcover_safe_layout(html, g)
+
+    html = inject_spine_text_layout(html, spine_cfg)
 
     if renderer_name in ("chrome", "weasyprint"):
         html = inject_print_page_size(html, g)
@@ -644,6 +874,9 @@ def render(target: CoverTarget, pages: int, paper: str, binding: str, preview: b
     print(f"Binding: {binding}  ({g['binding_note']})")
     print(f"Pages:   {pages}  ({paper} paper)")
     print(f"Spine:   {g['spine_in']:.4f}\"  ({g['SPINE']} CSS px)")
+    print(f"Spine text: {spine_cfg.status}  (policy={spine_cfg.policy}, min_pages={spine_cfg.min_pages}, edge_margin={spine_cfg.safe_margin_in:.3f}in)")
+    if spine_cfg.show:
+        print(f"Spine type: title={spine_cfg.title_font_px}px  series={spine_cfg.series_font_px}px  author={spine_cfg.author_font_px}px")
     print(f"Wrap:    {g['total_w_in']:.4f}\" × {g['total_h_in']:.4f}\"")
     print(f"CSS px:  {g['TOTAL_W']} × {g['TOTAL_H']}")
     print(f"Zones:   back x={g['BACK_LEFT']}  spine x={g['SPINE_LEFT']}  front x={g['FRONT_LEFT']}")
@@ -679,8 +912,7 @@ def render(target: CoverTarget, pages: int, paper: str, binding: str, preview: b
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("book_dir", nargs="?", help="Book/booklet directory containing book.env and cover.html, e.g. book1 or booklets/marriage-and-family.")
-    ap.add_argument("--pages", type=int, default=None, help="Final page count. Overrides --pdf and BOOK_COVER_PAGE_COUNT.")
-    ap.add_argument("--pdf", default=None, metavar="FILE", help="Interior PDF; page count is read from it automatically. Overridden by --pages.")
+    ap.add_argument("--pdf", default=None, metavar="FILE", help="Interior PDF; page count is read from it automatically. Defaults to dist/<BOOK_OUTPUT_BASENAME>-print.pdf.")
     ap.add_argument("--paper", choices=["cream", "white"], default=None, help="Paper color/thickness. Defaults to BOOK_COVER_PAPER or cream.")
     ap.add_argument("--binding", choices=["paperback", "hardcover"], default="paperback")
     ap.add_argument("--all-bindings", action="store_true", help="Render both paperback and hardcover for each selected book.")
@@ -695,8 +927,6 @@ def main() -> None:
     )
     args = ap.parse_args()
 
-    if args.pages is not None and args.pages < 1:
-        ap.error("--pages must be positive")
     if args.all and args.book_dir:
         ap.error("use either a book_dir argument or --all, not both")
     if not args.all and not args.book_dir:

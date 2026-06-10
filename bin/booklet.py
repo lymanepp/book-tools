@@ -15,10 +15,12 @@ book.env fields:
     BOOK_TITLE                Displayed title
     BOOK_SUBTITLE             Displayed subtitle
     BOOK_OUTPUT_BASENAME      Output filename base (no extension)
-    BOOK_AUTHOR               Author name (optional; defaults to Lyman Epp)
-    BOOK_COPYRIGHT_YEAR       Four-digit year (optional; defaults to 2026)
+    BOOK_AUTHOR               Author name
+    BOOK_COPYRIGHT_YEAR       Four-digit year
     BOOK_HARDCOVER_ISBN       ISBN-13, or empty string (optional)
     BOOK_PAPERBACK_ISBN       ISBN-13, or empty string (optional)
+    BOOKLET_SOURCE_TITLE      Parent/source work title used in generated front matter
+    BOOKLET_SOURCE_BOOKS      Source map, e.g. '1:book1 2:book2'
     BOOKLET_CHAPTERS          Space-separated chapter specs, e.g. '1:7 2:4-7'
     BOOKLET_INTRO             Intro Markdown file relative to booklet dir (optional)
 
@@ -56,7 +58,6 @@ def _find_repo_root() -> Path:
 
 
 ROOT = _find_repo_root()
-BOOK_DIRS = {1: ROOT / "book1", 2: ROOT / "book2"}
 BOOKLETS_DIR = ROOT / "booklets"
 BIN_DIR = Path(__file__).resolve().parent
 PDF_SH = BIN_DIR / "pdf.sh"
@@ -68,12 +69,14 @@ REQUIRED_FIELDS = [
     "BOOK_TITLE",
     "BOOK_SUBTITLE",
     "BOOK_OUTPUT_BASENAME",
+    "BOOK_AUTHOR",
+    "BOOK_COPYRIGHT_YEAR",
     "BOOKLET_CHAPTERS",
+    "BOOKLET_SOURCE_TITLE",
+    "BOOKLET_SOURCE_BOOKS",
 ]
 
 DEFAULT_FIELDS = {
-    "BOOK_AUTHOR": "Lyman Epp",
-    "BOOK_COPYRIGHT_YEAR": "2026",
     "BOOK_HARDCOVER_ISBN": "",
     "BOOK_PAPERBACK_ISBN": "",
     "BOOKLET_INTRO": "",
@@ -113,6 +116,45 @@ def validate_config(cfg: dict[str, str], env_path: Path) -> None:
         sys.exit(1)
 
 
+def resolve_under_root(value: str) -> Path:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = ROOT / path
+    return path.resolve()
+
+
+def parse_source_books(value: str, env_path: Path) -> dict[int, Path]:
+    """Parse BOOKLET_SOURCE_BOOKS='1:book1 2:book2'."""
+    source_books: dict[int, Path] = {}
+    for token in value.split():
+        if ":" not in token:
+            print(
+                f"ERROR: Invalid BOOKLET_SOURCE_BOOKS token in {env_path}: {token!r}. "
+                "Use NUMBER:directory, e.g. 1:book1.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        number_raw, dir_raw = token.split(":", 1)
+        try:
+            number = int(number_raw)
+        except ValueError:
+            print(f"ERROR: Invalid source-book number in {env_path}: {number_raw!r}", file=sys.stderr)
+            sys.exit(1)
+        if number < 1:
+            print(f"ERROR: Source-book numbers must be positive in {env_path}: {number}", file=sys.stderr)
+            sys.exit(1)
+        source_dir = resolve_under_root(dir_raw)
+        if not source_dir.is_dir():
+            print(f"ERROR: Source-book directory not found for {number}: {source_dir}", file=sys.stderr)
+            sys.exit(1)
+        source_books[number] = source_dir
+
+    if not source_books:
+        print(f"ERROR: BOOKLET_SOURCE_BOOKS in {env_path} produced no source books.", file=sys.stderr)
+        sys.exit(1)
+    return source_books
+
+
 def shell_quote(value: str) -> str:
     """Single-quote for a POSIX shell env file."""
     return "'" + value.replace("'", "'\\''") + "'"
@@ -128,10 +170,13 @@ def write_book_env(path: Path, cfg: dict[str, str]) -> None:
 
 # ── chapter discovery ────────────────────────────────────────────────────────
 
-def find_chapter_file(book: int, chapter: int) -> Path:
-    book_dir = BOOK_DIRS.get(book)
-    if not book_dir or not book_dir.is_dir():
-        raise FileNotFoundError(f"Book {book} directory not found: {book_dir}")
+def find_chapter_file(source_books: dict[int, Path], book: int, chapter: int) -> Path:
+    book_dir = source_books.get(book)
+    if not book_dir:
+        available = ", ".join(str(n) for n in sorted(source_books))
+        raise FileNotFoundError(
+            f"Book {book} is not mapped in BOOKLET_SOURCE_BOOKS. Available: {available}"
+        )
     pattern = str(book_dir / f"{chapter:02d}-*.md")
     matches = sorted(glob.glob(pattern))
     if not matches:
@@ -180,7 +225,7 @@ def rewrite_chapter_number(text: str, new_number: int) -> str:
 # ── front-matter-print.typ ───────────────────────────────────────────────────
 
 def make_front_matter(title: str, subtitle: str, author: str, year: str,
-                      hardcover_isbn: str, paperback_isbn: str) -> str:
+                      hardcover_isbn: str, paperback_isbn: str, source_title: str) -> str:
     def esc(s: str) -> str:
         return s.replace("\\", "\\\\").replace('"', '\\"')
 
@@ -250,7 +295,9 @@ def make_front_matter(title: str, subtitle: str, author: str, year: str,
   v(41.8pt)
   [All rights reserved.]
   v(41.6pt)
-  [This booklet is excerpted from _What Scripture Says_ by {esc(author)}. No part of this publication may be reproduced, stored in a retrieval system, or transmitted in any form or by any means without the prior written permission of the author, except for brief quotations used in reviews or scholarly works.]
+  [This booklet is excerpted from ]
+  emph[{esc(source_title)}]
+  [ by {esc(author)}. No part of this publication may be reproduced, stored in a retrieval system, or transmitted in any form or by any means without the prior written permission of the author, except for brief quotations used in reviews or scholarly works.]
   v(41.7pt)
   [Scripture quotations are from the ESV\\u{{00AE}} Bible (The Holy Bible, English Standard Version\\u{{00AE}}), copyright \\u{{00A9}} 2001 by Crossway, a publishing ministry of Good News Publishers. Used by permission. All rights reserved.]{isbn_block}
   v(41.7pt)
@@ -321,6 +368,8 @@ def main() -> None:
     paperback_isbn = cfg["BOOK_PAPERBACK_ISBN"]
     chapters_str = cfg["BOOKLET_CHAPTERS"]
     intro_file = cfg["BOOKLET_INTRO"]
+    source_title = cfg["BOOKLET_SOURCE_TITLE"]
+    source_books = parse_source_books(cfg["BOOKLET_SOURCE_BOOKS"], env_path)
 
     try:
         pairs = resolve_chapters(chapters_str)
@@ -355,7 +404,7 @@ def main() -> None:
         # Copy and renumber chapters.
         for booklet_num, (book, ch) in enumerate(pairs, start=1):
             try:
-                src = find_chapter_file(book, ch)
+                src = find_chapter_file(source_books, book, ch)
             except FileNotFoundError as e:
                 print(f"ERROR: {e}", file=sys.stderr)
                 sys.exit(1)
@@ -380,7 +429,7 @@ def main() -> None:
 
         write_book_env(fake_book / "book.env", cfg)
         (fake_book / "front-matter-print.typ").write_text(
-            make_front_matter(title, subtitle, author, year, hardcover_isbn, paperback_isbn),
+            make_front_matter(title, subtitle, author, year, hardcover_isbn, paperback_isbn, source_title),
             encoding="utf-8",
         )
 

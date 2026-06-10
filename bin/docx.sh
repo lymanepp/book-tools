@@ -28,7 +28,7 @@
 #   BOOK_OUTPUT_BASENAME     Stem for output filename
 #
 # Optional identity (substituted into front matter if present):
-#   BOOK_AUTHOR              Default: Lyman Epp
+#   BOOK_AUTHOR              Author name
 #   BOOK_HARDCOVER_ISBN
 #   BOOK_PAPERBACK_ISBN
 #
@@ -58,7 +58,7 @@ cd "$ROOT"
 BOOK="${1:-}"
 
 if [[ -z "$BOOK" ]]; then
-    echo "Usage: $0 book1|book2" >&2
+    echo "Usage: $0 <book-dir>" >&2
     exit 1
 fi
 
@@ -84,7 +84,7 @@ fi
 # shellcheck disable=SC1090
 source "$BOOK_ENV"
 
-for var in BOOK_TITLE BOOK_SUBTITLE BOOK_OUTPUT_BASENAME; do
+for var in BOOK_TITLE BOOK_SUBTITLE BOOK_OUTPUT_BASENAME BOOK_AUTHOR BOOK_COPYRIGHT_YEAR; do
     if [[ -z "${!var:-}" ]]; then
         echo "ERROR: $BOOK_ENV must define $var." >&2
         exit 1
@@ -143,10 +143,10 @@ trap 'rm -f "$RENDERED_FRONT_MATTER"' EXIT
 
 export FRONT_MATTER RENDERED_FRONT_MATTER
 export BOOK_TITLE BOOK_SUBTITLE BOOK_OUTPUT_BASENAME
-export BOOK_AUTHOR="${BOOK_AUTHOR:-Lyman Epp}"
+export BOOK_AUTHOR
 export BOOK_HARDCOVER_ISBN="${BOOK_HARDCOVER_ISBN:-}"
 export BOOK_PAPERBACK_ISBN="${BOOK_PAPERBACK_ISBN:-}"
-export BOOK_COPYRIGHT_YEAR="${BOOK_COPYRIGHT_YEAR:-}"
+export BOOK_COPYRIGHT_YEAR
 
 python3 - <<'PY'
 from pathlib import Path
