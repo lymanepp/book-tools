@@ -62,16 +62,15 @@ KDP geometry
     height = bleed + trim height + bleed
 
   Hardcover case laminate:
-    spine = pages × paper thickness
-    width = horizontal outer + back + hinge + spine + hinge + front + horizontal outer
-    height = vertical outer + trim height + vertical outer
+    spine = pages × paper thickness + KDP hardcover case-laminate spine allowance
+    width = wrap + back + hinge + spine + hinge + front + wrap
+    height = KDP hardcover full-wrap height
     non-background artwork is then inset to KDP hardcover safe zones
 
-  Paper thickness:
-    cream = 0.0025 inches/page
-    white = 0.002252 inches/page
+  Paper thickness and cover-size formulas live in kdp_cover_geometry.py,
+  which is unit-tested against KDP's cover-calculator output.
 
-  Trim: 6.0 × 9.0 inches.
+  Default trim: 6.0 × 9.0 inches.
 """
 
 import argparse
@@ -85,6 +84,8 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+from kdp_cover_geometry import CSS_DPI, PAPER_THICKNESS as PAPER, cover_geometry_tokens
 
 
 def page_count_from_pdf(path: Path) -> int:
@@ -104,23 +105,9 @@ def page_count_from_pdf(path: Path) -> int:
         sys.exit(f"Could not read PDF '{path}': {e}")
 
 
-PAPER = {"cream": 0.0025, "white": 0.002252}
-BLEED = 0.125
-TRIM_W, TRIM_H = 6.0, 9.0
-CSS_DPI = 96
-
-# KDP hardcover/case-laminate geometry constants, in inches.
-# These are calibrated to KDP's current cover-calculator output for 6×9
-# case-laminate hardcovers. The KDP uploader validates the final PDF
-# dimensions, so these constants must match the generated template size.
-#
-# For 6×9, 309-page cream-paper hardcover, KDP expects 14.437×10.417.
-# Formula used here:
-#   width  = 2*trim_w + spine + 2*HC_OUTER + 2*HC_HINGE
-#   height = trim_h + 2*HC_VERTICAL_OUTER
-HC_OUTER = 0.635
-HC_HINGE = 0.197
-HC_VERTICAL_OUTER = 0.7085
+# KDP cover geometry is centralized in kdp_cover_geometry.py and unit-tested
+# against KDP cover-calculator screenshots. Keep this renderer focused on
+# templating and PDF generation; do not reintroduce cover-size formulas here.
 KDP_SPINE_TEXT_MIN_PAGES = 79
 KDP_SPINE_TEXT_MIN_EDGE_MARGIN_IN = 0.375
 DEFAULT_SPINE_TEXT_EDGE_MARGIN_IN = 0.50
@@ -725,79 +712,7 @@ def px(inches: float) -> float:
 
 def geo(pages: int, paper: str = "cream", binding: str = "paperback") -> dict:
     """Return geometry tokens for paperback or hardcover KDP cover rendering."""
-    spine_in = pages * PAPER[paper]
-
-    if binding == "paperback":
-        left_outer_in = BLEED
-        top_outer_in = 0.0
-        panel_top_in = 0.0
-        face_in = TRIM_W
-        panel_h_in = TRIM_H + 2 * BLEED
-        hinge_in = 0.0
-        total_w_in = 2 * TRIM_W + spine_in + 2 * BLEED
-        total_h_in = TRIM_H + 2 * BLEED
-        binding_note = "paperback bleed"
-    elif binding == "hardcover":
-        left_outer_in = HC_OUTER
-        top_outer_in = HC_VERTICAL_OUTER
-        panel_top_in = HC_VERTICAL_OUTER
-        face_in = TRIM_W
-        panel_h_in = TRIM_H
-        hinge_in = HC_HINGE
-        total_w_in = 2 * TRIM_W + spine_in + 2 * HC_OUTER + 2 * HC_HINGE
-        total_h_in = TRIM_H + 2 * HC_VERTICAL_OUTER
-        binding_note = "hardcover case laminate"
-    else:
-        raise ValueError(f"Unsupported binding: {binding}")
-
-    total_w_px = px(total_w_in)
-    total_h_px = px(total_h_in)
-    outer_px = px(left_outer_in)
-    top_outer_px = px(top_outer_in)
-    face_px = px(face_in)
-    spine_px = px(spine_in)
-    hinge_px = px(hinge_in)
-    panel_top_px = px(panel_top_in)
-    panel_h_px = px(panel_h_in)
-
-    back_left_px = outer_px
-    back_hinge_left_px = round(back_left_px + face_px, 1)
-    spine_left_px = round(back_left_px + face_px + hinge_px, 1)
-    front_hinge_left_px = round(spine_left_px + spine_px, 1)
-    front_left_px = round(front_hinge_left_px + hinge_px, 1)
-
-    return {
-        "binding": binding,
-        "binding_note": binding_note,
-        "PAGES": pages,
-        "spine_in": spine_in,
-        "total_w_in": total_w_in,
-        "total_h_in": total_h_in,
-        "outer_in": left_outer_in,
-        "top_outer_in": top_outer_in,
-        "hinge_in": hinge_in,
-        "panel_h_in": panel_h_in,
-        "BLEED": px(BLEED),
-        "WRAP": px(HC_OUTER if binding == "hardcover" else BLEED),
-        "OUTER": outer_px,
-        "TOP_OUTER": top_outer_px,
-        "HINGE": hinge_px,
-        "FACE": face_px,
-        "SPINE": spine_px,
-        "TOTAL_W": total_w_px,
-        "TOTAL_H": total_h_px,
-        "PANEL_TOP": panel_top_px,
-        "PANEL_H": panel_h_px,
-        "BACK_LEFT": back_left_px,
-        "BACK_HINGE_LEFT": back_hinge_left_px,
-        "SPINE_LEFT": spine_left_px,
-        "FRONT_HINGE_LEFT": front_hinge_left_px,
-        "FRONT_LEFT": front_left_px,
-        # Spine rotation helpers (rotate(90deg) container positioning)
-        "SPINE_ROT_L": round(spine_px / 2 - panel_h_px / 2, 1),
-        "SPINE_ROT_T": round(panel_h_px / 2 - spine_px / 2, 1),
-        "SPINE_ROT_H": spine_px,
-    }
+    return cover_geometry_tokens(pages=pages, paper=paper, binding=binding)
 
 
 def inject_tokens(html: str, geometry: dict, target: CoverTarget) -> str:
