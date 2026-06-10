@@ -529,6 +529,30 @@ def has_weasyprint() -> bool:
         return False
 
 
+
+def validate_local_url_assets(html: str, template: Path) -> None:
+    """Fail fast when a cover template references missing local assets.
+
+    WeasyPrint will otherwise silently fall back to a different font when an
+    @font-face src file is missing. That makes local and CI cover output drift,
+    especially in the spine where font metrics matter.
+    """
+    missing: list[str] = []
+    for match in re.finditer(r"url\(\s*(['\"]?)(/[^)'\"\s]+)\1\s*\)", html):
+        asset = Path(match.group(2))
+        if not asset.is_file():
+            missing.append(str(asset))
+
+    if missing:
+        details = "\n".join(f"  - {path}" for path in sorted(set(missing)))
+        sys.exit(
+            f"Cover template references missing local asset(s): {template}\n"
+            f"{details}\n\n"
+            "Install the missing font/image package in this environment before "
+            "rendering covers. For the current What Scripture Says cover templates, "
+            "the Debian/Ubuntu package is usually: fonts-ebgaramond"
+        )
+
 def render_with_weasyprint(html: str, out: Path, workspace: Path) -> subprocess.CompletedProcess:
     """Render HTML to PDF with WeasyPrint and return a subprocess-like result."""
     try:
@@ -847,6 +871,8 @@ def render(target: CoverTarget, pages: int, paper: str, binding: str, preview: b
 
     if renderer_name in ("chrome", "weasyprint"):
         html = inject_print_page_size(html, g)
+
+    validate_local_url_assets(html, target.template)
 
     tmp = workspace / f"_tmp_{target.safe_id}_{binding}.html"
     tmp.write_text(html, encoding="utf-8")
