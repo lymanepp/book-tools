@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 # Common build-environment bootstrap for the book publishing pipeline.
 #
-# Supports the active pipeline only:
+# Supports the active pipeline:
 #   - Typst interior PDFs
 #   - WeasyPrint cover PDFs
 #   - Pandoc DOCX
 #   - Pandoc EPUB
 #
-# Intentionally does NOT install:
+# Shared by:
+#   - .devcontainer/post-create
+#   - .github/workflows/build-books.yml
+#
+# Intentional omissions:
 #   - TeX Live / XeLaTeX
 #   - qpdf
 #   - poppler-utils
@@ -41,6 +45,8 @@ apt_install() {
   fi
 
   export DEBIAN_FRONTEND=noninteractive
+  export NEEDRESTART_MODE=a
+  export NEEDRESTART_SUSPEND=1
 
   as_root apt-get update -qq
 
@@ -64,21 +70,24 @@ apt_install() {
     shared-mime-info
 }
 
-pip_install_system() {
-  # Install into the system Python environment so command-line tools like
-  # `weasyprint` are available in /usr/local/bin in both devcontainers and CI.
-  if as_root python3 -m pip install --upgrade "$@"; then
-    return
-  fi
-
-  # Debian/Ubuntu may enforce PEP 668. In this controlled container/CI build
-  # environment, using the explicit override is acceptable.
-  as_root python3 -m pip install --break-system-packages --upgrade "$@"
+pip_supports_break_system_packages() {
+  python3 -m pip help install 2>/dev/null | grep -q -- '--break-system-packages'
 }
 
 install_python_packages() {
-  pip_install_system \
-    pip \
+  # Do NOT install/upgrade pip here.
+  #
+  # On GitHub Actions ubuntu-24.04, pip is installed by Debian/Ubuntu as an apt
+  # package. Trying to upgrade it with pip causes:
+  #   ERROR: Cannot uninstall pip 24.0, RECORD file not found.
+  #
+  # The book pipeline only needs these Python packages.
+  local pip_flags=()
+  if pip_supports_break_system_packages; then
+    pip_flags+=(--break-system-packages)
+  fi
+
+  as_root python3 -m pip install "${pip_flags[@]}" --upgrade \
     python-docx \
     pypdf \
     weasyprint
@@ -112,7 +121,6 @@ install_typst() {
 
   curl -fsSL "$url" -o "$tmp_dir/$tarball"
   echo "${TYPST_SHA256}  $tmp_dir/$tarball" | sha256sum -c -
-
   tar -xJf "$tmp_dir/$tarball" -C "$tmp_dir"
   as_root install -m 0755 "$tmp_dir/typst-${TYPST_ARCH}/typst" /usr/local/bin/typst
   rm -rf "$tmp_dir"
@@ -121,7 +129,9 @@ install_typst() {
 }
 
 configure_fonts() {
-  fc-cache -f
+  if command -v fc-cache >/dev/null 2>&1; then
+    fc-cache -f
+  fi
 }
 
 configure_git() {

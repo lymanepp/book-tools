@@ -80,10 +80,8 @@ def fc_match(font_name: str) -> str | None:
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
     )
-
     if result.returncode != 0:
         return None
-
     return result.stdout.strip()
 
 
@@ -111,8 +109,16 @@ def main() -> int:
         errors.append("missing fontconfig match: EB Garamond")
 
     typst_version = command_output(["typst", "--version"]) if command_exists("typst") else "missing"
-    pandoc_version = command_output(["pandoc", "--version"]).splitlines()[0] if command_exists("pandoc") else "missing"
-    weasyprint_version = command_output(["weasyprint", "--version"]) if command_exists("weasyprint") else "missing"
+    pandoc_version = (
+        command_output(["pandoc", "--version"]).splitlines()[0]
+        if command_exists("pandoc")
+        else "missing"
+    )
+    weasyprint_version = (
+        command_output(["weasyprint", "--version"])
+        if command_exists("weasyprint")
+        else "missing"
+    )
 
     if errors:
         print("Build environment check FAILED:", file=sys.stderr)
@@ -120,21 +126,21 @@ def main() -> int:
             print(f"  - {error}", file=sys.stderr)
         print("", file=sys.stderr)
         print("Detected versions:", file=sys.stderr)
-        print(f"  typst:      {typst_version}", file=sys.stderr)
-        print(f"  pandoc:     {pandoc_version}", file=sys.stderr)
-        print(f"  weasyprint: {weasyprint_version}", file=sys.stderr)
+        print(f"  typst:       {typst_version}", file=sys.stderr)
+        print(f"  pandoc:      {pandoc_version}", file=sys.stderr)
+        print(f"  weasyprint:  {weasyprint_version}", file=sys.stderr)
         if tex_gyre_match:
-            print(f"  TeX Gyre:   {tex_gyre_match}", file=sys.stderr)
+            print(f"  TeX Gyre:    {tex_gyre_match}", file=sys.stderr)
         if eb_match:
-            print(f"  EB Garamond:{eb_match}", file=sys.stderr)
+            print(f"  EB Garamond: {eb_match}", file=sys.stderr)
         return 1
 
     print("Build environment check OK")
-    print(f"  typst:      {typst_version}")
-    print(f"  pandoc:     {pandoc_version}")
-    print(f"  weasyprint: {weasyprint_version}")
-    print(f"  TeX Gyre:   {tex_gyre_match}")
-    print(f"  EB Garamond:{eb_match}")
+    print(f"  typst:       {typst_version}")
+    print(f"  pandoc:      {pandoc_version}")
+    print(f"  weasyprint:  {weasyprint_version}")
+    print(f"  TeX Gyre:    {tex_gyre_match}")
+    print(f"  EB Garamond: {eb_match}")
     return 0
 
 
