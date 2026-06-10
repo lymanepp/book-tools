@@ -34,8 +34,8 @@
 #let _page-height = 9in
 #let _margin-top  = 0.70in
 #let _margin-bot  = 0.62in
-#let _margin-in   = 0.90in
-#let _margin-out  = 0.625in
+#let _margin-in   = 0.95in
+#let _margin-out  = 0.575in
 
 // Vertical rhythm and indents
 #let _leading        = 6.6pt
