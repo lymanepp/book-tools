@@ -2,8 +2,8 @@
 """Unit tests for KDP cover-calculator geometry.
 
 These numbers come from KDP calculator screenshots captured for 6×9,
-left-to-right books. They cover black-and-white white/cream paper and premium
-color white paper across paperback and hardcover at 76 and 400 pages.
+left-to-right books. They cover black-and-white white/cream paper, standard color white paper, and premium
+color white paper across paperback/hardcover where captured at 76 and 400 pages.
 """
 
 from __future__ import annotations
@@ -78,6 +78,18 @@ class KdpCoverGeometryTests(unittest.TestCase):
                 "paperback", "black_and_white", "white", 76,
                 12.421, 9.250, 6.000, 9.000,
                 0.171, 9.000, 0.046, 8.750,
+                0.125, 0.125, 0.250, 0.250,
+            ),
+            (
+                "paperback", "standard_color", "white", 76,
+                12.421, 9.250, 6.000, 9.000,
+                0.171, 9.000, 0.046, 8.750,
+                0.125, 0.125, 0.250, 0.250,
+            ),
+            (
+                "paperback", "standard_color", "white", 400,
+                13.151, 9.250, 6.000, 9.000,
+                0.901, 9.000, 0.776, 8.750,
                 0.125, 0.125, 0.250, 0.250,
             ),
             (
@@ -156,11 +168,25 @@ class KdpCoverGeometryTests(unittest.TestCase):
         self.assert_close(premium.spine_width_in, 0.684217, "hardcover premium white 211 spine")
         self.assert_close(premium.full_cover_width_in, 14.259217, "hardcover premium white 211 full width")
 
+    def test_standard_color_uses_white_stock_geometry(self) -> None:
+        standard = calculate_kdp_cover_geometry(
+            binding="paperback", interior_type="standard_color", paper="white", page_count=400
+        )
+        bw_white = calculate_kdp_cover_geometry(
+            binding="paperback", interior_type="black_and_white", paper="white", page_count=400
+        )
+        self.assert_close(standard.spine_width_in, bw_white.spine_width_in, "standard/B&W white spine")
+        self.assert_close(standard.full_cover_width_in, bw_white.full_cover_width_in, "standard/B&W white full width")
+
     def test_aliases_are_accepted(self) -> None:
-        g = calculate_kdp_cover_geometry(
+        premium = calculate_kdp_cover_geometry(
             binding="paperback", interior_type="Premium color", paper="White paper", page_count=76
         )
-        self.assert_close(g.full_cover_width_in, 12.428372, "premium alias full width")
+        standard = calculate_kdp_cover_geometry(
+            binding="paperback", interior_type="Standard color", paper="White paper", page_count=76
+        )
+        self.assert_close(premium.full_cover_width_in, 12.428372, "premium alias full width")
+        self.assert_close(standard.full_cover_width_in, 12.421152, "standard alias full width")
 
     def test_rejects_unsupported_settings(self) -> None:
         with self.assertRaises(ValueError):
@@ -175,7 +201,11 @@ class KdpCoverGeometryTests(unittest.TestCase):
             )
         with self.assertRaises(ValueError):
             calculate_kdp_cover_geometry(
-                binding="paperback", interior_type="standard_color", paper="white", page_count=76
+                binding="paperback", interior_type="standard_color", paper="cream", page_count=76
+            )
+        with self.assertRaises(ValueError):
+            calculate_kdp_cover_geometry(
+                binding="paperback", interior_type="economy_color", paper="white", page_count=76
             )
 
 

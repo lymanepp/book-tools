@@ -8,7 +8,7 @@ KDP geometry inline.
 
 The formulas below are calibrated from KDP's cover calculator for:
   - Binding: paperback / hardcover case laminate
-  - Interior: black & white / premium color
+  - Interior: black & white / standard color / premium color
   - Paper: white / cream where KDP allows the combination
   - Direction: left-to-right
   - Units: inches
@@ -25,14 +25,14 @@ from typing import Literal
 
 Binding = Literal["paperback", "hardcover"]
 Paper = Literal["white", "cream"]
-InteriorType = Literal["black_and_white", "premium_color"]
+InteriorType = Literal["black_and_white", "standard_color", "premium_color"]
 ReadingDirection = Literal["left_to_right"]
 
 CSS_DPI = 96
 
 SUPPORTED_BINDINGS = ("paperback", "hardcover")
 SUPPORTED_PAPERS = ("white", "cream")
-SUPPORTED_INTERIOR_TYPES = ("black_and_white", "premium_color")
+SUPPORTED_INTERIOR_TYPES = ("black_and_white", "standard_color", "premium_color")
 SUPPORTED_READING_DIRECTIONS = ("left_to_right",)
 
 # KDP paper-stack thickness, inches/page. The keys intentionally include the
@@ -40,6 +40,7 @@ SUPPORTED_READING_DIRECTIONS = ("left_to_right",)
 PAPER_THICKNESS = {
     ("black_and_white", "white"): 0.002252,
     ("black_and_white", "cream"): 0.002500,
+    ("standard_color", "white"): 0.002252,
     ("premium_color", "white"): 0.002347,
 }
 
@@ -50,6 +51,9 @@ INTERIOR_ALIASES = {
     "black & white": "black_and_white",
     "b&w": "black_and_white",
     "bw": "black_and_white",
+    "standard_color": "standard_color",
+    "standard-color": "standard_color",
+    "standard color": "standard_color",
     "premium_color": "premium_color",
     "premium-color": "premium_color",
     "premium color": "premium_color",

@@ -25,8 +25,8 @@ book.env fields used by this renderer
   BOOK_TITLE                  Human-readable label in console output
   BOOK_OUTPUT_BASENAME        Output filename base
   BOOK_COVER_TEMPLATE         Optional; defaults to cover.html
-  BOOK_COVER_PAPER            Optional; cream or white; defaults to cream for B&W, white for premium color
-  BOOK_COVER_INTERIOR_TYPE    Optional; black_and_white or premium_color; defaults to black_and_white
+  BOOK_COVER_PAPER            Optional; cream or white; defaults to cream for B&W, white for color interiors
+  BOOK_COVER_INTERIOR_TYPE    Optional; black_and_white, standard_color, or premium_color; defaults to black_and_white
   BOOK_COVER_SPINE_TEXT       Optional; auto, true, or false; defaults to auto
   BOOK_COVER_SPINE_TEXT_MIN_PAGES
                               Optional; defaults to 79 per KDP spine-text rule
@@ -406,7 +406,7 @@ def load_cover_target(book_arg: str | Path, workspace: Path) -> CoverTarget:
     except ValueError as e:
         sys.exit(f"{env_path} has unsupported BOOK_COVER_INTERIOR_TYPE={raw_interior!r}. {e}")
 
-    default_paper_name = "white" if interior_type == "premium_color" else "cream"
+    default_paper_name = "cream" if interior_type == "black_and_white" else "white"
     raw_paper = cfg.get("BOOK_COVER_PAPER", default_paper_name) or default_paper_name
     try:
         paper = normalize_paper(raw_paper)
@@ -876,7 +876,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("book_dir", nargs="?", help="Book/booklet directory containing book.env and cover.html, e.g. book1 or booklets/marriage-and-family.")
     ap.add_argument("--pdf", default=None, metavar="FILE", help="Interior PDF; page count is read from it automatically. Defaults to dist/<BOOK_OUTPUT_BASENAME>-print.pdf.")
-    ap.add_argument("--paper", choices=list(SUPPORTED_PAPERS), default=None, help="Paper color/thickness. Defaults to BOOK_COVER_PAPER, or cream for B&W / white for premium color.")
+    ap.add_argument("--paper", choices=list(SUPPORTED_PAPERS), default=None, help="Paper color/thickness. Defaults to BOOK_COVER_PAPER, or cream for B&W / white for color interiors.")
     ap.add_argument("--interior-type", choices=list(SUPPORTED_INTERIOR_TYPES), default=None, help="KDP interior type. Defaults to BOOK_COVER_INTERIOR_TYPE or black_and_white.")
     ap.add_argument("--binding", choices=["paperback", "hardcover"], default="paperback")
     ap.add_argument("--all-bindings", action="store_true", help="Render both paperback and hardcover for each selected book.")
