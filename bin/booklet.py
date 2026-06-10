@@ -222,6 +222,142 @@ def rewrite_chapter_number(text: str, new_number: int) -> str:
     )
 
 
+# ── strict sed edit validation/application ───────────────────────────────────
+
+def active_sed_rules(sed_path: Path) -> list[tuple[int, str]]:
+    """Return active, single-line sed rules from edits.sed.
+
+    Blank lines and comment lines are ignored. The booklet build intentionally
+    supports only one surgical edit per active line so stale edits can be caught
+    precisely.
+    """
+    rules: list[tuple[int, str]] = []
+    for lineno, line in enumerate(sed_path.read_text(encoding="utf-8").splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        rules.append((lineno, stripped))
+    return rules
+
+
+def find_unescaped_delimiter(text: str, delimiter: str, start: int) -> int:
+    """Find delimiter not escaped by a backslash in a sed command string."""
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char == delimiter:
+            return index
+    return -1
+
+
+def sed_count_command(rule: str, sed_path: Path, lineno: int) -> str:
+    """Convert a supported sed edit rule into a sed -n command that prints affected lines."""
+    if rule.startswith("s"):
+        if len(rule) < 4:
+            raise ValueError(f"{sed_path}:{lineno}: malformed substitution rule: {rule}")
+        delimiter = rule[1]
+        if delimiter.isspace():
+            raise ValueError(f"{sed_path}:{lineno}: malformed substitution delimiter: {rule}")
+        first = find_unescaped_delimiter(rule, delimiter, 2)
+        if first == -1:
+            raise ValueError(f"{sed_path}:{lineno}: substitution is missing pattern delimiter: {rule}")
+        second = find_unescaped_delimiter(rule, delimiter, first + 1)
+        if second == -1:
+            raise ValueError(f"{sed_path}:{lineno}: substitution is missing replacement delimiter: {rule}")
+        flags = rule[second + 1:]
+        if not re.fullmatch(r"[0-9gIpM]*", flags):
+            raise ValueError(
+                f"{sed_path}:{lineno}: unsupported substitution flags {flags!r}; "
+                "supported flags are digits, g, I, p, and M."
+            )
+        if "p" not in flags:
+            flags += "p"
+        return rule[:second + 1] + flags
+
+    if rule.startswith("/"):
+        end = find_unescaped_delimiter(rule, "/", 1)
+        if end == -1:
+            raise ValueError(f"{sed_path}:{lineno}: deletion rule is missing closing delimiter: {rule}")
+        suffix = rule[end + 1:]
+        if suffix != "d":
+            raise ValueError(
+                f"{sed_path}:{lineno}: unsupported sed address command {suffix!r}; "
+                "only /PATTERN/d is supported."
+            )
+        return rule[:end + 1] + "p"
+
+    raise ValueError(
+        f"{sed_path}:{lineno}: unsupported sed rule: {rule!r}. "
+        "Use one s/PATTERN/REPLACEMENT/FLAGS rule or one /PATTERN/d rule per line."
+    )
+
+
+def count_sed_rule_matches(rule: str, sed_path: Path, lineno: int, md_files: list[str]) -> tuple[int, list[str]]:
+    """Count how many current Markdown lines would be affected by one sed rule."""
+    count_command = sed_count_command(rule, sed_path, lineno)
+    result = subprocess.run(
+        ["sed", "-n", "-E", count_command] + md_files,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip() or f"sed exited with code {result.returncode}"
+        raise RuntimeError(f"{sed_path}:{lineno}: could not validate sed rule: {message}")
+    matched_lines = result.stdout.splitlines()
+    return len(matched_lines), matched_lines
+
+
+def apply_sed_edits_strict(sed_path: Path, md_files: list[str]) -> None:
+    """Apply edits.sed, failing if any active edit does not affect exactly one line.
+
+    This catches stale booklet edits as soon as the source chapters drift. Each
+    active edits.sed line is validated against the current temporary Markdown
+    files, then applied before the next rule is checked, matching the intended
+    surgical/sequential nature of these booklet edits.
+    """
+    rules = active_sed_rules(sed_path)
+    if not rules:
+        print("  No active edits.sed rules.")
+        return
+
+    for lineno, rule in rules:
+        try:
+            match_count, matched_lines = count_sed_rule_matches(rule, sed_path, lineno, md_files)
+        except (ValueError, RuntimeError) as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+        if match_count != 1:
+            print(
+                f"ERROR: {sed_path}:{lineno} matched {match_count} lines; expected exactly 1.",
+                file=sys.stderr,
+            )
+            print(f"Rule: {rule}", file=sys.stderr)
+            if matched_lines:
+                print("Matched lines:", file=sys.stderr)
+                for matched in matched_lines[:10]:
+                    short = matched if len(matched) <= 180 else matched[:177] + "..."
+                    print(f"  {short}", file=sys.stderr)
+                if len(matched_lines) > 10:
+                    print(f"  ... {len(matched_lines) - 10} more", file=sys.stderr)
+            sys.exit(1)
+
+        result = subprocess.run(
+            ["sed", "-E", "-i", rule] + md_files,
+            check=False,
+        )
+        if result.returncode != 0:
+            print(f"ERROR: sed exited with code {result.returncode} at {sed_path}:{lineno}", file=sys.stderr)
+            sys.exit(result.returncode)
+
+
 # ── front-matter-print.typ ───────────────────────────────────────────────────
 
 def make_front_matter(title: str, subtitle: str, author: str, year: str,
@@ -417,15 +553,9 @@ def main() -> None:
         # Apply surgical edits if edits.sed exists in the booklet directory.
         edits_sed = booklet_dir / "edits.sed"
         if edits_sed.exists():
-            print("  Applying edits.sed...")
+            print("  Validating/applying edits.sed...")
             md_files = sorted(str(f) for f in fake_book.glob("*.md"))
-            result_sed = subprocess.run(
-                ["sed", "-E", "-i", f"--file={edits_sed}"] + md_files,
-                check=False,
-            )
-            if result_sed.returncode != 0:
-                print(f"ERROR: sed exited with code {result_sed.returncode}", file=sys.stderr)
-                sys.exit(result_sed.returncode)
+            apply_sed_edits_strict(edits_sed, md_files)
 
         write_book_env(fake_book / "book.env", cfg)
         (fake_book / "front-matter-print.typ").write_text(
