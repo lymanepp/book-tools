@@ -2,20 +2,38 @@
 """
 render-cover.py — KDP full-wrap cover renderer for lymanepp.com.
 
+The renderer is book-directory driven, matching tools/bin/pdf.sh. Give it a
+book directory, and it reads that directory's book.env plus cover.html.
+There is no embedded registry of known books or booklets.
+
 Usage
 ─────
-  tools/bin/render-cover.py --book wss1 --binding paperback
-  tools/bin/render-cover.py --book wss1 --binding hardcover
-  tools/bin/render-cover.py --book wss1 --pdf dist/what-scripture-says-vol1-print.pdf
-  tools/bin/render-cover.py --book wss1 --pages 315
-  tools/bin/render-cover.py --book wss1 --preview
-  tools/bin/render-cover.py --all --all-bindings
+  python3 tools/bin/render-cover.py book1 --binding paperback
+  python3 tools/bin/render-cover.py book2 --binding hardcover
+  python3 tools/bin/render-cover.py book1 --pdf dist/what-scripture-says-vol1-print.pdf
+  python3 tools/bin/render-cover.py book1 --pages 315
+  python3 tools/bin/render-cover.py booklets/marriage-and-family --pdf dist/marriage-and-family-print.pdf
+  python3 tools/bin/render-cover.py booklets/marriage-and-family --all-bindings
+  python3 tools/bin/render-cover.py --all --all-bindings
+
+Required per-book files
+───────────────────────
+  <book-dir>/book.env
+  <book-dir>/cover.html  (or BOOK_COVER_TEMPLATE='<relative/path.html>')
+
+book.env fields used by this renderer
+─────────────────────────────────────
+  BOOK_TITLE                  Human-readable label in console output
+  BOOK_OUTPUT_BASENAME        Output filename base
+  BOOK_COVER_PAGE_COUNT       Fallback page count when --pages/--pdf is omitted
+  BOOK_COVER_TEMPLATE         Optional; defaults to cover.html
+  BOOK_COVER_PAPER            Optional; cream or white; defaults to cream
 
 Page count resolution order
 ────────────────────────────
-  1. --pages N          (explicit, always wins)
-  2. --pdf FILE         (reads page count from the interior PDF automatically)
-  3. book default       (wss1=309, wss2=329, left=360)
+  1. --pages N
+  2. --pdf FILE
+  3. BOOK_COVER_PAGE_COUNT from book.env
 
 Output naming
 ─────────────
@@ -44,16 +62,22 @@ KDP geometry
     white = 0.002252 inches/page
 
   Trim: 6.0 × 9.0 inches.
-
-Editing text
-────────────
-  Open the HTML template and search EDIT — every editable string is flagged.
 """
 
-import argparse, math, os, re, shutil, subprocess, sys
+import argparse
+import html as html_lib
+import math
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass
 from pathlib import Path
 
-def page_count_from_pdf(path: str) -> int:
+
+def page_count_from_pdf(path: Path) -> int:
     """Return the page count of a PDF file using pypdf."""
     try:
         from pypdf import PdfReader
@@ -61,13 +85,14 @@ def page_count_from_pdf(path: str) -> int:
         sys.exit("pypdf is required to use --pdf.\n"
                  "Install: pip3 install pypdf --break-system-packages")
     try:
-        reader = PdfReader(path)
+        reader = PdfReader(str(path))
         count = len(reader.pages)
         if count < 1:
             sys.exit(f"PDF reports 0 pages: {path}")
         return count
     except Exception as e:
         sys.exit(f"Could not read PDF '{path}': {e}")
+
 
 PAPER = {"cream": 0.0025, "white": 0.002252}
 BLEED = 0.125
@@ -83,30 +108,29 @@ CSS_DPI = 96
 # Formula used here:
 #   width  = 2*trim_w + spine + 2*HC_OUTER + 2*HC_HINGE
 #   height = trim_h + 2*HC_VERTICAL_OUTER
-HC_OUTER = 0.635          # Horizontal outside/wrap+margin allowance.
-HC_HINGE = 0.197          # Hinge allowance on each side of the spine.
-HC_VERTICAL_OUTER = 0.7085 # Top/bottom outside/wrap+board allowance.
+HC_OUTER = 0.635
+HC_HINGE = 0.197
+HC_VERTICAL_OUTER = 0.7085
 
-BOOKS = {
-    "wss1": {
-        "template": "book1/cover.html",
-        "pages": 309,
-        "prefix": "what-scripture-says-vol1",
-        "label": "WSS Volume 1",
-    },
-    "wss2": {
-        "template": "book2/cover.html",
-        "pages": 329,
-        "prefix": "what-scripture-says-vol2",
-        "label": "WSS Volume 2",
-    },
-    "left": {
-        "template": "cover-left.html",
-        "pages": 360,
-        "prefix": "how-the-left-lost-its-grip-on-reality",
-        "label": "How the Left Lost Its Grip on Reality",
-    },
-}
+
+@dataclass(frozen=True)
+class CoverTarget:
+    book_dir: Path
+    env_path: Path
+    template: Path
+    title: str
+    output_basename: str
+    default_pages: int | None
+    default_paper: str
+
+    @property
+    def label(self) -> str:
+        return self.title or self.output_basename
+
+    @property
+    def safe_id(self) -> str:
+        rel = str(self.book_dir).replace(os.sep, "-")
+        return re.sub(r"[^A-Za-z0-9_.-]+", "-", rel).strip("-._") or "cover"
 
 
 def git_workspace_root() -> Path:
@@ -121,15 +145,119 @@ def git_workspace_root() -> Path:
         )
         return Path(result.stdout.strip()).resolve()
     except (subprocess.CalledProcessError, FileNotFoundError):
-        sys.exit("Could not determine the Git workspace root. Run this from inside the repository.")
+        return Path.cwd().resolve()
 
 
-def resolve_template(template: str, workspace: Path) -> Path:
-    """Resolve an HTML template path from the Git workspace root."""
-    tmpl = (workspace / template).resolve()
-    if not tmpl.is_file():
-        sys.exit(f"Template not found: {tmpl}")
-    return tmpl
+def resolve_under_workspace(path: str | Path, workspace: Path) -> Path:
+    p = Path(path).expanduser()
+    if not p.is_absolute():
+        p = workspace / p
+    return p.resolve()
+
+
+def load_env(path: Path) -> dict[str, str]:
+    """Parse the simple shell-style KEY=value book.env files used by this repo."""
+    env: dict[str, str] = {}
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("export "):
+            stripped = stripped[len("export "):].lstrip()
+        if "=" not in stripped:
+            continue
+        key, _, raw = stripped.partition("=")
+        key = key.strip()
+        raw = raw.strip()
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+            sys.exit(f"Invalid env key in {path}:{lineno}: {key}")
+        try:
+            parts = shlex.split(raw, comments=False, posix=True)
+            value = parts[0] if parts else ""
+        except ValueError as e:
+            sys.exit(f"Could not parse {path}:{lineno}: {e}")
+        env[key] = value
+    return env
+
+
+def optional_int(value: str | None, name: str, env_path: Path) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        parsed = int(value)
+    except ValueError:
+        sys.exit(f"{env_path} must define {name} as an integer page count, got: {value!r}")
+    if parsed < 1:
+        sys.exit(f"{env_path} must define {name} as a positive page count, got: {parsed}")
+    return parsed
+
+
+def load_cover_target(book_arg: str | Path, workspace: Path) -> CoverTarget:
+    book_dir = resolve_under_workspace(book_arg, workspace)
+    env_path = book_dir / "book.env"
+    if not book_dir.is_dir():
+        sys.exit(f"Book directory not found: {book_dir}")
+    if not env_path.is_file():
+        sys.exit(f"Missing {env_path}. Cover targets must be driven by book.env.")
+
+    cfg = load_env(env_path)
+    for var in ("BOOK_TITLE", "BOOK_OUTPUT_BASENAME"):
+        if not cfg.get(var):
+            sys.exit(f"{env_path} must define {var}.")
+
+    template_name = cfg.get("BOOK_COVER_TEMPLATE", "cover.html") or "cover.html"
+    template = Path(template_name).expanduser()
+    if not template.is_absolute():
+        template = book_dir / template
+    template = template.resolve()
+    if not template.is_file():
+        sys.exit(f"Cover template not found: {template}\nSet BOOK_COVER_TEMPLATE in {env_path}, or add cover.html to the book directory.")
+
+    paper = cfg.get("BOOK_COVER_PAPER", "cream") or "cream"
+    if paper not in PAPER:
+        sys.exit(f"{env_path} has unsupported BOOK_COVER_PAPER={paper!r}. Use cream or white.")
+
+    pages = optional_int(cfg.get("BOOK_COVER_PAGE_COUNT"), "BOOK_COVER_PAGE_COUNT", env_path)
+
+    return CoverTarget(
+        book_dir=book_dir,
+        env_path=env_path,
+        template=template,
+        title=cfg["BOOK_TITLE"],
+        output_basename=cfg["BOOK_OUTPUT_BASENAME"],
+        default_pages=pages,
+        default_paper=paper,
+    )
+
+
+def discover_cover_targets(workspace: Path) -> list[CoverTarget]:
+    """Discover cover-capable book directories without a hard-coded target registry."""
+    candidates: list[Path] = []
+
+    for child in workspace.iterdir():
+        if child.name.startswith(".") or child.name in {"build", "dist", "tools"}:
+            continue
+        if child.is_dir() and (child / "book.env").is_file():
+            candidates.append(child)
+
+    booklets_dir = workspace / "booklets"
+    if booklets_dir.is_dir():
+        for child in booklets_dir.iterdir():
+            if child.is_dir() and (child / "book.env").is_file():
+                candidates.append(child)
+
+    targets: list[CoverTarget] = []
+    for candidate in sorted(set(candidates)):
+        try:
+            target = load_cover_target(candidate, workspace)
+        except SystemExit as e:
+            # --all should skip directories that have book.env but no cover template.
+            # A direct invocation still reports the error via load_cover_target().
+            if (candidate / "cover.html").exists():
+                raise e
+            continue
+        targets.append(target)
+    return targets
 
 
 def executable_from_env(var_name: str) -> str | None:
@@ -254,15 +382,15 @@ def renderer_missing_error(name: str) -> None:
     path_value = os.environ.get("PATH", "")
     sys.exit(
         f"Could not find {name} in this dev container.\n\n"
-        "This script now supports either wkhtmltopdf or headless Chrome/Chromium. "
+        "This script supports WeasyPrint, wkhtmltopdf, or headless Chrome/Chromium. "
         "Your container's apt repositories do not appear to provide wkhtmltopdf, "
         "so install Chromium instead inside the dev container:\n\n"
         "  sudo apt-get update && sudo apt-get install -y chromium\n\n"
-        "Then rerun:\n\n"
-        "  tools/bin/render-cover.py --book wss1\n\n"
+        "Then rerun, for example:\n\n"
+        "  python3 tools/bin/render-cover.py book1\n\n"
         "Optional overrides:\n"
-        "  CHROME=/full/path/to/chromium tools/bin/render-cover.py --book wss1\n"
-        "  WKHTMLTOPDF=/full/path/to/wkhtmltopdf tools/bin/render-cover.py --book wss1\n\n"
+        "  CHROME=/full/path/to/chromium python3 tools/bin/render-cover.py book1\n"
+        "  WKHTMLTOPDF=/full/path/to/wkhtmltopdf python3 tools/bin/render-cover.py book1\n\n"
         f"PATH seen by Python:\n  {path_value}"
     )
 
@@ -288,9 +416,9 @@ def inject_hardcover_safe_layout(html: str, g: dict) -> str:
     or outside-cover safety margins. The base template is intentionally tight
     for paperback, so hardcover gets a conservative override here.
     """
-    safe = px(0.635)          # KDP hardcover text/image safe inset from book edge.
-    content = round(safe + 13, 1)  # Keep text off the decorative frame itself.
-    barcode_bottom = px(0.76) # KDP hardcover barcode bottom clearance.
+    safe = px(0.635)
+    content = round(safe + 13, 1)
+    barcode_bottom = px(0.76)
     barcode_h = px(1.2)
     barcode_top = round(g["PANEL_H"] - barcode_bottom - barcode_h, 1)
 
@@ -352,6 +480,7 @@ def build_chrome_cmd(exe: str, tmp: Path, out: Path, g: dict) -> list[str]:
         tmp.as_uri(),
     ]
 
+
 def px(inches: float) -> float:
     """Convert inches to CSS pixels and keep output stable/readable."""
     return round(inches * CSS_DPI, 1)
@@ -363,7 +492,6 @@ def geo(pages: int, paper: str = "cream", binding: str = "paperback") -> dict:
 
     if binding == "paperback":
         left_outer_in = BLEED
-        right_outer_in = BLEED
         top_outer_in = 0.0
         panel_top_in = 0.0
         face_in = TRIM_W
@@ -374,7 +502,6 @@ def geo(pages: int, paper: str = "cream", binding: str = "paperback") -> dict:
         binding_note = "paperback bleed"
     elif binding == "hardcover":
         left_outer_in = HC_OUTER
-        right_outer_in = HC_OUTER
         top_outer_in = HC_VERTICAL_OUTER
         panel_top_in = HC_VERTICAL_OUTER
         face_in = TRIM_W
@@ -434,16 +561,56 @@ def geo(pages: int, paper: str = "cream", binding: str = "paperback") -> dict:
         "SPINE_ROT_H": spine_px,
     }
 
-def render(book_id, pages, paper, binding, preview, outdir, workspace, requested_renderer):
-    cfg = BOOKS[book_id]
+
+def inject_tokens(html: str, geometry: dict, target: CoverTarget) -> str:
+    """Replace geometry tokens and book.env tokens in cover.html."""
+    replacements = {k: str(v) for k, v in geometry.items()}
+    replacements.update({
+        "BOOK_TITLE": target.title,
+        "BOOK_OUTPUT_BASENAME": target.output_basename,
+    })
+
+    # Also expose every book.env value to the template as {{VAR}}. This keeps
+    # template text optional but lets future covers avoid duplicating metadata.
+    env_values = load_env(target.env_path)
+    replacements.update(env_values)
+
+    def repl(match: re.Match[str]) -> str:
+        key = match.group(1).strip()
+        value = replacements.get(key)
+        if value is None:
+            return match.group(0)
+        return html_lib.escape(value) if key.startswith("BOOK_") else str(value)
+
+    return re.sub(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}", repl, html)
+
+
+def resolve_pages(target: CoverTarget, args: argparse.Namespace, workspace: Path) -> int:
+    if args.pages is not None:
+        return args.pages
+    if args.pdf:
+        pdf = resolve_under_workspace(args.pdf, workspace)
+        if not pdf.is_file():
+            raise SystemExit(f"PDF not found: {pdf}")
+        pages = page_count_from_pdf(pdf)
+        print(f"Page count from PDF: {pages}  ({pdf})")
+        return pages
+    if target.default_pages is not None:
+        return target.default_pages
+    raise SystemExit(
+        f"No page count supplied for {target.book_dir}.\n"
+        "Use --pages, use --pdf, or add BOOK_COVER_PAGE_COUNT to book.env."
+    )
+
+
+def render(target: CoverTarget, pages: int, paper: str, binding: str, preview: bool,
+           outdir: str | Path, workspace: Path, requested_renderer: str) -> None:
     g = geo(pages, paper, binding)
-    tmpl = resolve_template(cfg["template"], workspace)
 
     renderer_name, renderer_exe = choose_renderer(requested_renderer)
 
-    html = tmpl.read_text()
-    for k, v in g.items():
-        html = html.replace(f"{{{{{k}}}}}", str(v))
+    raw_html = target.template.read_text(encoding="utf-8")
+    html = inject_tokens(raw_html, g, target)
 
     if binding == "hardcover":
         html = inject_hardcover_safe_layout(html, g)
@@ -451,8 +618,8 @@ def render(book_id, pages, paper, binding, preview, outdir, workspace, requested
     if renderer_name in ("chrome", "weasyprint"):
         html = inject_print_page_size(html, g)
 
-    tmp = workspace / f"_tmp_{book_id}.html"
-    tmp.write_text(html)
+    tmp = workspace / f"_tmp_{target.safe_id}_{binding}.html"
+    tmp.write_text(html, encoding="utf-8")
 
     outdir = Path(outdir)
     if not outdir.is_absolute():
@@ -460,7 +627,7 @@ def render(book_id, pages, paper, binding, preview, outdir, workspace, requested
     outdir.mkdir(parents=True, exist_ok=True)
 
     suf = "-preview" if preview else ""
-    out = outdir / f"{cfg['prefix']}-{binding}-cover{suf}.pdf"
+    out = outdir / f"{target.output_basename}-{binding}-cover{suf}.pdf"
     dpi = 96 if preview else 300
 
     if renderer_name == "wkhtmltopdf":
@@ -471,7 +638,9 @@ def render(book_id, pages, paper, binding, preview, outdir, workspace, requested
         cmd = ["weasyprint"]
 
     print(f"\n{'─'*58}")
-    print(f"Book:    {cfg['label']}")
+    print(f"Book:    {target.label}")
+    print(f"Dir:     {target.book_dir.relative_to(workspace) if target.book_dir.is_relative_to(workspace) else target.book_dir}")
+    print(f"Template:{' ':1}{target.template.relative_to(workspace) if target.template.is_relative_to(workspace) else target.template}")
     print(f"Binding: {binding}  ({g['binding_note']})")
     print(f"Pages:   {pages}  ({paper} paper)")
     print(f"Spine:   {g['spine_in']:.4f}\"  ({g['SPINE']} CSS px)")
@@ -499,26 +668,24 @@ def render(book_id, pages, paper, binding, preview, outdir, workspace, requested
         kb = out.stat().st_size / 1024
         print(f"✓  {out}  ({kb:.0f} KB)")
         warns = [l for l in r.stderr.splitlines() if l.strip() and "QStandardPaths" not in l]
-        for w in warns[:4]: print(f"   {w}")
+        for w in warns[:4]:
+            print(f"   {w}")
     else:
         print("✗  Generation failed", file=sys.stderr)
         print(r.stderr, file=sys.stderr)
         sys.exit(1)
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-         formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--book",    choices=list(BOOKS), default=None)
-    ap.add_argument("--pages",   type=int, default=None,
-        help="Final page count (overrides --pdf). Defaults: wss1=309, wss2=329, left=360.")
-    ap.add_argument("--pdf", default=None, metavar="FILE",
-        help="Path to the interior PDF; page count is read from it automatically. "
-             "Overridden by --pages if both are supplied.")
-    ap.add_argument("--paper",   choices=["cream", "white"], default="cream")
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("book_dir", nargs="?", help="Book/booklet directory containing book.env and cover.html, e.g. book1 or booklets/marriage-and-family.")
+    ap.add_argument("--pages", type=int, default=None, help="Final page count. Overrides --pdf and BOOK_COVER_PAGE_COUNT.")
+    ap.add_argument("--pdf", default=None, metavar="FILE", help="Interior PDF; page count is read from it automatically. Overridden by --pages.")
+    ap.add_argument("--paper", choices=["cream", "white"], default=None, help="Paper color/thickness. Defaults to BOOK_COVER_PAPER or cream.")
     ap.add_argument("--binding", choices=["paperback", "hardcover"], default="paperback")
     ap.add_argument("--all-bindings", action="store_true", help="Render both paperback and hardcover for each selected book.")
     ap.add_argument("--preview", action="store_true")
-    ap.add_argument("--all",     action="store_true")
+    ap.add_argument("--all", action="store_true", help="Discover all directories with book.env and cover.html; no hard-coded book list is used.")
     ap.add_argument("--output-dir", default="dist")
     ap.add_argument(
         "--renderer",
@@ -528,32 +695,29 @@ def main():
     )
     args = ap.parse_args()
 
-    targets = list(BOOKS) if args.all else ([args.book] if args.book else None)
-    if not targets:
-        ap.error("specify --book BOOK or --all")
+    if args.pages is not None and args.pages < 1:
+        ap.error("--pages must be positive")
+    if args.all and args.book_dir:
+        ap.error("use either a book_dir argument or --all, not both")
+    if not args.all and not args.book_dir:
+        ap.error("specify a book_dir containing book.env, or use --all")
     if args.all and args.pdf:
-        ap.error("--pdf can only be used with a single --book; page counts differ by book. Use per-book commands or rely on defaults with --all.")
-
-    # Resolve page count: explicit --pages > --pdf > book default
-    if args.pages:
-        resolved_pages = args.pages
-    elif args.pdf:
-        if not os.path.isfile(args.pdf):
-            ap.error(f"PDF not found: {args.pdf}")
-        resolved_pages = page_count_from_pdf(args.pdf)
-        print(f"Page count from PDF: {resolved_pages}  ({args.pdf})")
-    else:
-        resolved_pages = None  # will fall back to per-book default below
+        ap.error("--pdf can only be used with one book_dir; page counts differ by book")
 
     workspace = git_workspace_root()
+    targets = discover_cover_targets(workspace) if args.all else [load_cover_target(args.book_dir, workspace)]
+    if not targets:
+        sys.exit("No cover targets found. A target must contain book.env and cover.html.")
 
     bindings = ["paperback", "hardcover"] if args.all_bindings else [args.binding]
 
-    for b in targets:
-        pages = resolved_pages if resolved_pages is not None else BOOKS[b]["pages"]
+    for target in targets:
+        pages = resolve_pages(target, args, workspace)
+        paper = args.paper or target.default_paper
         for binding in bindings:
-            render(b, pages, args.paper, binding, args.preview, args.output_dir, workspace, args.renderer)
+            render(target, pages, paper, binding, args.preview, args.output_dir, workspace, args.renderer)
     print("\nDone.")
+
 
 if __name__ == "__main__":
     main()

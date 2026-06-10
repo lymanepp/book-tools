@@ -1,25 +1,26 @@
 #!/usr/bin/env python3
 """
-build-booklet.py — Compile a WSS booklet PDF via the Typst pipeline.
+booklet.py — Compile a WSS booklet PDF via the same Typst pipeline as books.
 
-Each booklet lives in booklets/<name>/booklet.env. The script reads all
-configuration from that file and produces output identical in format to
-the full books (same Typst template, same running heads, same front matter
-structure).
+Each booklet lives in booklets/<name>/book.env. Identity and output metadata
+use the same BOOK_* variables consumed by pdf.sh and render-cover.py. The only
+booklet-specific fields are the source-selection fields used to assemble the
+temporary book directory before handing off to pdf.sh.
 
 Usage:
-    python3 build-booklet.py <booklet-name>
-    python3 build-booklet.py marriage-and-manhood
+    python3 tools/bin/booklet.py marriage-and-family
+    python3 tools/bin/booklet.py booklets/marriage-and-family
 
-booklet.env fields:
-    BOOKLET_TITLE             Displayed title
-    BOOKLET_SUBTITLE          Displayed subtitle
-    BOOKLET_OUTPUT_BASENAME   Output filename base (no extension)
-    BOOKLET_AUTHOR            Author name
-    BOOKLET_COPYRIGHT_YEAR    Four-digit year
-    BOOKLET_HARDCOVER_ISBN    ISBN-13, or empty string
-    BOOKLET_PAPERBACK_ISBN    ISBN-13, or empty string
+book.env fields:
+    BOOK_TITLE                Displayed title
+    BOOK_SUBTITLE             Displayed subtitle
+    BOOK_OUTPUT_BASENAME      Output filename base (no extension)
+    BOOK_AUTHOR               Author name (optional; defaults to Lyman Epp)
+    BOOK_COPYRIGHT_YEAR       Four-digit year (optional; defaults to 2026)
+    BOOK_HARDCOVER_ISBN       ISBN-13, or empty string (optional)
+    BOOK_PAPERBACK_ISBN       ISBN-13, or empty string (optional)
     BOOKLET_CHAPTERS          Space-separated chapter specs, e.g. '1:7 2:4-7'
+    BOOKLET_INTRO             Intro Markdown file relative to booklet dir (optional)
 
 Chapter spec syntax:
     1:7        Book 1, chapter 7
@@ -31,10 +32,12 @@ import argparse
 import glob
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
 
 # ── paths ────────────────────────────────────────────────────────────────────
 
@@ -42,54 +45,63 @@ def _find_repo_root() -> Path:
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
-        return Path(result.stdout.strip())
-    except subprocess.CalledProcessError:
-        # Fallback: script location (matches pdf.sh fallback behavior)
-        return Path(__file__).parent
+        return Path(result.stdout.strip()).resolve()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # python3 tools/bin/booklet.py -> repo root is two parents up.
+        return Path(__file__).resolve().parents[2]
+
 
 ROOT = _find_repo_root()
 BOOK_DIRS = {1: ROOT / "book1", 2: ROOT / "book2"}
 BOOKLETS_DIR = ROOT / "booklets"
-BIN_DIR = ROOT / "tools" / "scripts"
+BIN_DIR = Path(__file__).resolve().parent
 PDF_SH = BIN_DIR / "pdf.sh"
+
 
 # ── config ───────────────────────────────────────────────────────────────────
 
 REQUIRED_FIELDS = [
-    "BOOKLET_TITLE",
-    "BOOKLET_SUBTITLE",
-    "BOOKLET_OUTPUT_BASENAME",
-    "BOOKLET_AUTHOR",
-    "BOOKLET_COPYRIGHT_YEAR",
+    "BOOK_TITLE",
+    "BOOK_SUBTITLE",
+    "BOOK_OUTPUT_BASENAME",
     "BOOKLET_CHAPTERS",
 ]
 
-OPTIONAL_FIELDS = {
-    "BOOKLET_HARDCOVER_ISBN": "",
-    "BOOKLET_PAPERBACK_ISBN": "",
+DEFAULT_FIELDS = {
+    "BOOK_AUTHOR": "Lyman Epp",
+    "BOOK_COPYRIGHT_YEAR": "2026",
+    "BOOK_HARDCOVER_ISBN": "",
+    "BOOK_PAPERBACK_ISBN": "",
     "BOOKLET_INTRO": "",
 }
 
 
 def load_env(path: Path) -> dict[str, str]:
-    """Parse a shell-style key=value env file using shlex. Returns a dict of strings."""
-    import shlex
-    env = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
+    """Parse a shell-style key=value env file. Returns a dict of strings."""
+    env: dict[str, str] = {}
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
             continue
-        if "=" not in line:
+        if stripped.startswith("export "):
+            stripped = stripped[len("export "):].lstrip()
+        if "=" not in stripped:
             continue
-        key, _, raw = line.partition("=")
+        key, _, raw = stripped.partition("=")
         key = key.strip()
         raw = raw.strip()
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+            print(f"ERROR: Invalid env key in {path}:{lineno}: {key}", file=sys.stderr)
+            sys.exit(1)
         try:
-            value = shlex.split(raw)[0] if raw else ""
-        except ValueError:
-            value = raw  # fallback: use raw if shlex fails
+            value = shlex.split(raw, comments=False, posix=True)[0] if raw else ""
+        except ValueError as e:
+            print(f"ERROR: Could not parse {path}:{lineno}: {e}", file=sys.stderr)
+            sys.exit(1)
         env[key] = value
     return env
 
@@ -99,6 +111,19 @@ def validate_config(cfg: dict[str, str], env_path: Path) -> None:
     if missing:
         print(f"ERROR: {env_path} is missing required fields: {', '.join(missing)}", file=sys.stderr)
         sys.exit(1)
+
+
+def shell_quote(value: str) -> str:
+    """Single-quote for a POSIX shell env file."""
+    return "'" + value.replace("'", "'\\''") + "'"
+
+
+def write_book_env(path: Path, cfg: dict[str, str]) -> None:
+    """Write only BOOK_* fields to the temporary book.env consumed by pdf.sh."""
+    lines = []
+    for key in sorted(k for k in cfg if k.startswith("BOOK_")):
+        lines.append(f"{key}={shell_quote(str(cfg[key]))}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 # ── chapter discovery ────────────────────────────────────────────────────────
@@ -146,7 +171,9 @@ def rewrite_chapter_number(text: str, new_number: int) -> str:
     return re.sub(
         r"^# \d+\.\s+(.+)$",
         lambda m: f"# {new_number}. {m.group(1)}",
-        text, count=1, flags=re.MULTILINE
+        text,
+        count=1,
+        flags=re.MULTILINE,
     )
 
 
@@ -154,7 +181,7 @@ def rewrite_chapter_number(text: str, new_number: int) -> str:
 
 def make_front_matter(title: str, subtitle: str, author: str, year: str,
                       hardcover_isbn: str, paperback_isbn: str) -> str:
-    def esc(s):
+    def esc(s: str) -> str:
         return s.replace("\\", "\\\\").replace('"', '\\"')
 
     isbn_block = ""
@@ -169,7 +196,7 @@ def make_front_matter(title: str, subtitle: str, author: str, year: str,
         isbn_block = "\n  v(41.7pt)\n" + "\n".join(lines)
 
     return f"""\
-// front-matter-print.typ — Booklet front matter (generated by build-booklet.py)
+// front-matter-print.typ — Booklet front matter (generated by booklet.py)
 // Mirrors the 4-page structure of the real WSS book front-matter files.
 // pdf.sh appends toc-print.typ (p5/recto + p6/verso) automatically.
 #import "book.typ" as book
@@ -241,39 +268,60 @@ def make_front_matter(title: str, subtitle: str, author: str, year: str,
 
 # ── main ─────────────────────────────────────────────────────────────────────
 
-def main():
+def resolve_booklet_dir(arg: str) -> Path:
+    supplied = Path(arg)
+    candidates = []
+    if supplied.is_absolute():
+        candidates.append(supplied)
+    else:
+        candidates.append((ROOT / supplied).resolve())
+        candidates.append((BOOKLETS_DIR / supplied).resolve())
+
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    # Return the most likely path so the error is useful.
+    return candidates[-1]
+
+
+def rel(path: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Build a WSS booklet PDF from booklets/<name>/booklet.env.",
+        description="Build a WSS booklet PDF from booklets/<name>/book.env.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("booklet", help="Booklet name (subdirectory under booklets/)")
+    parser.add_argument("booklet", help="Booklet name under booklets/, or path to a booklet directory")
     args = parser.parse_args()
 
-    # Load config
-    booklet_dir = BOOKLETS_DIR / args.booklet
-    env_path = booklet_dir / "booklet.env"
+    booklet_dir = resolve_booklet_dir(args.booklet)
+    env_path = booklet_dir / "book.env"
     if not env_path.exists():
-        print(f"ERROR: No booklet.env found at {env_path}", file=sys.stderr)
+        print(f"ERROR: No book.env found at {env_path}", file=sys.stderr)
         available = sorted(p.name for p in BOOKLETS_DIR.iterdir() if p.is_dir()) if BOOKLETS_DIR.exists() else []
         if available:
             print(f"Available booklets: {', '.join(available)}", file=sys.stderr)
         sys.exit(1)
 
-    cfg = {**OPTIONAL_FIELDS, **load_env(env_path)}
+    cfg = {**DEFAULT_FIELDS, **load_env(env_path)}
     validate_config(cfg, env_path)
 
-    title          = cfg["BOOKLET_TITLE"]
-    subtitle       = cfg["BOOKLET_SUBTITLE"]
-    basename       = cfg["BOOKLET_OUTPUT_BASENAME"]
-    author         = cfg["BOOKLET_AUTHOR"]
-    year           = cfg["BOOKLET_COPYRIGHT_YEAR"]
-    hardcover_isbn = cfg["BOOKLET_HARDCOVER_ISBN"]
-    paperback_isbn = cfg["BOOKLET_PAPERBACK_ISBN"]
-    chapters_str   = cfg["BOOKLET_CHAPTERS"]
-    intro_file     = cfg["BOOKLET_INTRO"]
+    title = cfg["BOOK_TITLE"]
+    subtitle = cfg["BOOK_SUBTITLE"]
+    basename = cfg["BOOK_OUTPUT_BASENAME"]
+    author = cfg["BOOK_AUTHOR"]
+    year = cfg["BOOK_COPYRIGHT_YEAR"]
+    hardcover_isbn = cfg["BOOK_HARDCOVER_ISBN"]
+    paperback_isbn = cfg["BOOK_PAPERBACK_ISBN"]
+    chapters_str = cfg["BOOKLET_CHAPTERS"]
+    intro_file = cfg["BOOKLET_INTRO"]
 
-    # Resolve chapter list
     try:
         pairs = resolve_chapters(chapters_str)
     except ValueError as e:
@@ -291,6 +339,7 @@ def main():
         shutil.rmtree(fake_book)
     fake_book.mkdir()
 
+    result = subprocess.CompletedProcess([], 1)
     try:
         # Copy intro (if any) as 00-intro.md — plain '# Title' heading renders
         # as front_chapter() (unnumbered, recto-opening, appears in TOC).
@@ -301,9 +350,9 @@ def main():
                 sys.exit(1)
             dest = fake_book / "00-intro.md"
             dest.write_text(intro_src.read_text(encoding="utf-8"), encoding="utf-8")
-            print(f"  00-intro.md ← booklets/{args.booklet}/{intro_file}")
+            print(f"  00-intro.md ← {rel(intro_src)}")
 
-        # Copy and renumber chapters
+        # Copy and renumber chapters.
         for booklet_num, (book, ch) in enumerate(pairs, start=1):
             try:
                 src = find_chapter_file(book, ch)
@@ -314,9 +363,9 @@ def main():
             text = rewrite_chapter_number(text, booklet_num)
             dest = fake_book / f"{booklet_num:02d}-ch{booklet_num}.md"
             dest.write_text(text, encoding="utf-8")
-            print(f"  {dest.name} ← book{book}/{src.name}")
+            print(f"  {dest.name} ← {rel(src)}")
 
-        # Apply surgical edits if edits.sed exists in the booklet directory
+        # Apply surgical edits if edits.sed exists in the booklet directory.
         edits_sed = booklet_dir / "edits.sed"
         if edits_sed.exists():
             print("  Applying edits.sed...")
@@ -329,23 +378,7 @@ def main():
                 print(f"ERROR: sed exited with code {result_sed.returncode}", file=sys.stderr)
                 sys.exit(result_sed.returncode)
 
-        # Write book.env (pdf.sh sources this)
-        # sq() safely single-quotes a value, escaping any embedded apostrophes.
-        def sq(s: str) -> str:
-            return "'" + s.replace("'", "'\\''") + "'"
-
-        (fake_book / "book.env").write_text(
-            f"BOOK_TITLE={sq(title)}\n"
-            f"BOOK_SUBTITLE={sq(subtitle)}\n"
-            f"BOOK_OUTPUT_BASENAME={sq(basename)}\n"
-            f"BOOK_AUTHOR={sq(author)}\n"
-            f"BOOK_COPYRIGHT_YEAR={year}\n"
-            f"BOOK_HARDCOVER_ISBN={sq(hardcover_isbn)}\n"
-            f"BOOK_PAPERBACK_ISBN={sq(paperback_isbn)}\n",
-            encoding="utf-8",
-        )
-
-        # Write front-matter-print.typ
+        write_book_env(fake_book / "book.env", cfg)
         (fake_book / "front-matter-print.typ").write_text(
             make_front_matter(title, subtitle, author, year, hardcover_isbn, paperback_isbn),
             encoding="utf-8",

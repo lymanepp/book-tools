@@ -22,6 +22,13 @@
 #let _index-entry-gap = 4.2pt
 #let _hyphenate     = false
 
+// Allow Typst to use tiny character-level adjustments while justifying text.
+// This reduces harsh word-spacing rivers when hyphenation is disabled, without
+// globally letterspacing all body text. Word-spacing limits remain Typst defaults.
+#let _justification-limits = (
+  tracking: (min: -0.003em, max: 0.008em),
+)
+
 // Page geometry
 #let _page-width  = 6in
 #let _page-height = 9in
@@ -53,6 +60,7 @@
 #let _body-par() = {
   set par(
     justify: true,
+    justification-limits: _justification-limits,
     leading: _leading,
     spacing: _para-spacing,
     first-line-indent: (amount: _indent, all: false),
@@ -62,6 +70,7 @@
 #let _noindent-par(justify: true) = {
   set par(
     justify: justify,
+    justification-limits: _justification-limits,
     leading: _leading,
     spacing: 0pt,
     first-line-indent: (amount: 0pt, all: true),
@@ -148,6 +157,7 @@
       #_reset-book-text()
       #set par(
         justify: true,
+        justification-limits: _justification-limits,
         leading: _leading,
         spacing: 0pt,
         first-line-indent: (amount: 0pt, all: true),
@@ -169,6 +179,7 @@
       #_reset-book-text()
       #set par(
         justify: true,
+        justification-limits: _justification-limits,
         leading: _leading,
         spacing: 0pt,
         first-line-indent: (amount: 0pt, all: true),
@@ -190,6 +201,7 @@
     set text(font: _body-font, size: _fn-size, lang: "en", hyphenate: _hyphenate)
     set par(
       justify: true,
+      justification-limits: _justification-limits,
       leading: 5.0pt,
       spacing: 0pt,
       first-line-indent: (amount: 0pt, all: true),
@@ -331,6 +343,7 @@
     #_reset-book-text()
     #set par(
       justify: true,
+      justification-limits: _justification-limits,
       leading: _leading,
       spacing: 0pt,
       first-line-indent: (amount: 0pt, all: true),
