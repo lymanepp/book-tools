@@ -48,6 +48,7 @@ local function esc_typst_text(s)
   s = s:gsub("%[", "\\[")
   s = s:gsub("%]", "\\]")
   s = s:gsub("%$", "\\$")
+  s = s:gsub("_", "\\_")
   return s
 end
 
