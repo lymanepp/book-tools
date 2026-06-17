@@ -73,6 +73,9 @@ def strip_markdown(text: str) -> str:
         if re.match(r'^#{1,6}\s', line):
             out.extend(['', heading_to_spoken(line), ''])
             continue
+        # PDF-only epigraph line-break markers are source comments for
+        # the print renderer. They should never be spoken or counted.
+        line = re.sub(r'<!--\s*pdf-?br\s*-->',     '',    line)
         line = re.sub(r'^>\s?',                    '',    line)
         line = re.sub(r'\[\^[^\]]+\]',             '',    line)
         line = re.sub(r'\[([^\]]+)\]\([^)]+\)',    r'\1', line)

@@ -424,6 +424,13 @@ local function inline_to_typst(el)
       if s ~= "" then table.insert(parts, s) end
     end
     return "#footnote[" .. esc_typst_text(table.concat(parts, " ")) .. "]"
+  elseif el.t == "RawInline" and el.format == "html"
+      and el.text:match("^%s*<!%-%-%s*pdf%-?br%s*%-%->%s*$") then
+    -- PDF-only manual line-break control. In Markdown source, insert
+    -- <!--pdfbr--> inside an epigraph where the print/PDF line should break.
+    -- Pandoc drops or hides the HTML comment in non-PDF outputs; the audiobook
+    -- scripts strip it explicitly.
+    return "#linebreak()"
   elseif el.t == "RawInline" and el.format == "typst" then
     return el.text
   elseif el.t == "Code" then
