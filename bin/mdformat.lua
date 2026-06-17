@@ -38,6 +38,16 @@
 --
 --   This preserves a distinction between ordinary block quotes and
 --   intentionally styled Scripture quotations.
+--
+--   Epigraphs:
+--
+--       ::: {.epigraph}
+--       "Brief quotation."
+--
+--       --Author, Source
+--       :::
+--
+--   DOCX maps these to the centered italic "Epigraph" paragraph style.
 
 ----------------------------------------------------------------------
 -- Helpers
@@ -65,6 +75,13 @@ end
 
 local function is_toc_tex(raw)
   return is_tex_command(raw, "\\toc")
+end
+
+local function has_class(el, class_name)
+  for _, cls in ipairs(el.classes or {}) do
+    if cls == class_name then return true end
+  end
+  return false
 end
 
 ----------------------------------------------------------------------
@@ -160,6 +177,85 @@ function Header(el)
   --------------------------------------------------------------------
 
   return el
+end
+
+
+-----------------------------------------------------------------------
+-- Fenced Div handling
+-----------------------------------------------------------------------
+
+local function epigraph_inline_chunks(blocks)
+  local chunks = {}
+
+  for _, b in ipairs(blocks or {}) do
+    if b.t == "Para" or b.t == "Plain" then
+      table.insert(chunks, b.content or {})
+    elseif b.t == "BlockQuote" then
+      for _, qb in ipairs(b.content or {}) do
+        if qb.t == "Para" or qb.t == "Plain" then
+          table.insert(chunks, qb.content or {})
+        end
+      end
+    end
+  end
+
+  return chunks
+end
+
+local function join_epigraph_chunks(chunks)
+  local inlines = pandoc.List({})
+
+  for i, chunk in ipairs(chunks or {}) do
+    if i > 1 then
+      inlines:insert(pandoc.LineBreak())
+    end
+    for _, inline in ipairs(chunk) do
+      inlines:insert(inline)
+    end
+  end
+
+  return inlines
+end
+
+function Div(el)
+
+  if has_class(el, "epigraph") then
+    local chunks = epigraph_inline_chunks(el.content)
+
+    if FORMAT:match("docx") and #chunks >= 2 then
+      -- DOCX needs independently styleable quote and attribution paragraphs.
+      -- A hard line break makes the gap effectively untunable, while one
+      -- Epigraph style on both paragraphs makes the attribution inherit the
+      -- chapter-title spacing. Use companion styles instead.
+      local quote_inlines = pandoc.List({})
+      for i = 1, #chunks - 1 do
+        if i > 1 then
+          quote_inlines:insert(pandoc.LineBreak())
+        end
+        for _, inline in ipairs(chunks[i]) do
+          quote_inlines:insert(inline)
+        end
+      end
+
+      local quote_div = pandoc.Div({ pandoc.Para(quote_inlines) })
+      quote_div.attributes["custom-style"] = "Epigraph"
+
+      local attribution_div = pandoc.Div({ pandoc.Para(chunks[#chunks]) })
+      attribution_div.attributes["custom-style"] = "EpigraphAttribution"
+
+      return pandoc.List({ quote_div, attribution_div })
+    end
+
+    if FORMAT:match("docx") then
+      el.attributes["custom-style"] = "Epigraph"
+    end
+
+    -- EPUB/HTML keeps the natural two-paragraph structure so CSS margins, not
+    -- an unstyleable hard line break, control the attribution gap.
+    return el
+  end
+
+  return nil
 end
 
 ----------------------------------------------------------------------

@@ -6,3 +6,21 @@ h1 {
 body {
   line-height: 1.4;
 }
+
+.epigraph {
+  text-align: center;
+  font-style: italic;
+  max-width: 70%;
+  margin: 1.75em auto 1.75em auto;
+  line-height: 1.35;
+}
+
+.epigraph p {
+  text-indent: 0;
+  margin: 0;
+}
+
+.epigraph p + p {
+  margin-top: 0.35em;
+}
+

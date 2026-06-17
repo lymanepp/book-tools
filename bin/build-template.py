@@ -56,6 +56,8 @@ clinical
     Clinical Example: Blue-grey shading + blue rule. For case vignettes.
 
 Quote font size is always body_size - 0.5pt regardless of preset.
+Epigraph paragraphs are centered, italic, and unboxed across presets.
+Epigraph attribution paragraphs use a tighter dedicated companion style.
 """
 
 from __future__ import annotations
@@ -564,6 +566,42 @@ def configure_paragraph_styles(doc: Document, cfg: BookConfig) -> None:
     s.paragraph_format.space_before      = Pt(0)
     s.paragraph_format.space_after       = Pt(0)
 
+
+    # Epigraph — centered chapter-opening quotation; no box/rule/shading.
+    s = ensure_style(doc, "Epigraph", WD_STYLE_TYPE.PARAGRAPH, base_id="Normal")
+    set_style_ui(s, hidden=None, quick=False, priority=99)
+    clear_borders_and_shading(s)
+    set_font(s, name=cfg.body_font, size_pt=max(cfg.body_size - 0.5, 7.0), italic=True, color=_DARK)
+    pf = s.paragraph_format
+    pf.alignment         = WD_ALIGN_PARAGRAPH.CENTER
+    pf.left_indent       = Inches(0.35)
+    pf.right_indent      = Inches(0.35)
+    pf.first_line_indent = Inches(0)
+    pf.space_before      = Pt(10)
+    pf.space_after       = Pt(2)
+    pf.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
+    pf.line_spacing      = 1.08
+
+    # EpigraphAttribution — companion line below the quote. Kept separate so
+    # the quote-to-attribution gap is a visible, tunable Word paragraph gap
+    # instead of an unstyleable hard-line-break gap.
+    s = ensure_style(doc, "EpigraphAttribution", WD_STYLE_TYPE.PARAGRAPH, base_id="Epigraph")
+    set_next(doc, s, "BodyText")
+    set_style_ui(s, hidden=None, quick=False, priority=99)
+    clear_borders_and_shading(s)
+    set_font(s, name=cfg.body_font, size_pt=max(cfg.body_size - 0.5, 7.0), italic=True, color=_DARK)
+    pf = s.paragraph_format
+    pf.alignment         = WD_ALIGN_PARAGRAPH.CENTER
+    pf.left_indent       = Inches(0.35)
+    pf.right_indent      = Inches(0.35)
+    pf.first_line_indent = Inches(0)
+    pf.space_before      = Pt(2)
+    pf.space_after       = Pt(18)
+    pf.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
+    pf.line_spacing      = 1.08
+
+    set_next(doc, style_by_id(doc, "Epigraph"), "EpigraphAttribution")
+
     # Captioned Figure
     s = ensure_style(doc, "CaptionedFigure", WD_STYLE_TYPE.PARAGRAPH, base_id="Normal")
     pf = s.paragraph_format
@@ -726,6 +764,10 @@ def add_style_samples(doc: Document, cfg: BookConfig) -> None:
          "First paragraph after heading — no first-line indent."),
         ("Block Text",
          f"Block Text: bare > blockquote  (preset: {cfg.quote_preset})."),
+        ("Epigraph",
+         "Epigraph: centered italic chapter-opening quotation."),
+        ("EpigraphAttribution",
+         "Epigraph attribution: centered italic source line."),
         ("Scripture Quote",
          "Scripture Quote: fenced div.  "
          "For God so loved the world… (John 3:16)"),

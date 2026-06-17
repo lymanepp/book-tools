@@ -184,6 +184,8 @@ def strip_markdown(text: str) -> str:
     lines = text.splitlines()
     out   = []
     for line in lines:
+        if re.match(r'^:::\s*(?:\{[^}]*\}|[A-Za-z0-9_-]+)?\s*$', line):
+            continue
         if re.match(r'^\[\^[^\]]+\]:', line):
             continue
         if re.match(r'^[-*_]{3,}\s*$', line):
@@ -199,6 +201,7 @@ def strip_markdown(text: str) -> str:
         line = re.sub(r'\*\*([^*]+)\*\*',    r'\1', line)
         line = re.sub(r'\*([^*\s][^*]*[^*\s])\*', r'\1', line)
         line = re.sub(r'\*([^*\s])\*',       r'\1', line)
+        line = re.sub(r'^—\s*', '', line)
         line = line.replace('—', ', ')
         out.append(line)
     return re.sub(r'\n{3,}', '\n\n', '\n'.join(out)).strip()

@@ -44,6 +44,11 @@
 #let _quote-indent   = 0.375in
 #let _quote-before   = 4.5pt
 #let _quote-after    = 4.5pt
+#let _epigraph-before = 10pt
+#let _epigraph-after  = 18pt
+#let _epigraph-attribution-gap = 10pt
+#let _epigraph-width  = 95%
+#let _epigraph-size   = 10.4pt
 #let _quote-adjacent-before = 0.0pt  // 25% less gap between consecutive block quotes
 #let _list-spacing   = 13.2pt  // one full line (_leading * 2) between items
 #let _list-before    = 12pt
@@ -284,6 +289,44 @@
 #let section(title: "", id: "") = _kept-heading(title, size: _h2-size, italic: false, before: 18pt, after: 6pt)
 #let subsection(title: "", id: "") = _kept-heading(title, size: _h3-size, italic: true, before: 13pt, after: 5pt)
 #let heading(level: 4, title: "", id: "") = _kept-heading(title, size: _body-size, italic: false, before: 11pt, after: 4pt)
+
+
+// ── Chapter epigraph ─────────────────────────────────────────────────────────
+#let _render-epigraph(quote, attribution: none) = {
+  v(_epigraph-before, weak: true)
+  // Center the epigraph block itself within the live text area. Without this
+  // wrapper, the narrower block starts at the left margin and only the text
+  // inside it is centered, which makes the epigraph appear off-center on the
+  // page.
+  align(center)[
+    #block(width: _epigraph-width, breakable: false)[
+      #set text(font: _body-font, size: _epigraph-size, style: "italic", lang: "en", hyphenate: _hyphenate)
+      #set par(
+        justify: false,
+        leading: _leading,
+        spacing: 3pt,
+        first-line-indent: (amount: 0pt, all: true),
+        hanging-indent: 0pt,
+      )
+      #align(center)[
+        #_book-text(quote, size: _epigraph-size, style: "italic")
+        #if attribution != none {
+          v(_epigraph-attribution-gap, weak: false)
+          _book-text(attribution, size: _epigraph-size, style: "italic")
+        }
+      ]
+    ]
+  ]
+  v(_epigraph-after, weak: true)
+}
+
+// Backward-compatible renderer for legacy generated Typst that passes the
+// whole epigraph as one content block. New generated Typst uses
+// epigraph_parts() so the quote-to-attribution gap is controlled by an
+// explicit vertical-space element rather than paragraph spacing, which hard
+// line breaks do not honor.
+#let epigraph(body) = _render-epigraph(body)
+#let epigraph_parts(quote, attribution: none) = _render-epigraph(quote, attribution: attribution)
 
 // ── Block quote ──────────────────────────────────────────────────────────────
 #let quote(body, adjacent: false) = {

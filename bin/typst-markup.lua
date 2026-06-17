@@ -134,6 +134,13 @@ local function strong_text_ends_runin(s)
   return s:match("[%.:]$") ~= nil
 end
 
+local function has_class(el, class_name)
+  for _, cls in ipairs(el.classes or {}) do
+    if cls == class_name then return true end
+  end
+  return false
+end
+
 
 function Pandoc(doc)
   -- pdf-typst.sh writes the Typst preamble itself so it can inject
@@ -437,6 +444,43 @@ inlines_to_typst = function(inlines)  -- assigns the forward-declared local
     table.insert(parts, inline_to_typst(il))
   end
   return table.concat(parts, "")
+end
+
+
+function Div(el)
+  if not has_class(el, "epigraph") then
+    return nil
+  end
+
+  previous_block_was_quote = false
+  local parts = {}
+  for _, b in ipairs(el.content or {}) do
+    if b.t == "Para" or b.t == "Plain" then
+      table.insert(parts, inlines_to_typst(b.content or {}))
+    elseif b.t == "BlockQuote" then
+      for _, qb in ipairs(b.content or {}) do
+        if qb.t == "Para" or qb.t == "Plain" then
+          table.insert(parts, inlines_to_typst(qb.content or {}))
+        end
+      end
+    else
+      local s = trim(stringify(b))
+      if s ~= "" then table.insert(parts, esc_typst_text(s)) end
+    end
+  end
+
+  -- Do not consume next_para_kind. The first real paragraph after an
+  -- epigraph should still be treated as the first paragraph after the heading.
+  if #parts >= 2 then
+    local quote_parts = {}
+    for i = 1, #parts - 1 do
+      table.insert(quote_parts, parts[i])
+    end
+    local quote = table.concat(quote_parts, "#linebreak()")
+    local attribution = parts[#parts]
+    return raw_block("#book.epigraph_parts([" .. quote .. "], attribution: [" .. attribution .. "])")
+  end
+  return raw_block("#book.epigraph[" .. table.concat(parts, "#linebreak()") .. "]")
 end
 
 -- Serialize a paragraph's inlines to a book.para() call.
