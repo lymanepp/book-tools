@@ -75,6 +75,11 @@ pip_supports_break_system_packages() {
 }
 
 install_python_packages() {
+  if [[ "${SKIP_PIP_INSTALL:-0}" == "1" ]]; then
+    echo "Skipping Python package install; handled by workflow."
+    return
+  fi
+
   # Do NOT install/upgrade pip here.
   #
   # On GitHub Actions ubuntu-24.04, pip is installed by Debian/Ubuntu as an apt
