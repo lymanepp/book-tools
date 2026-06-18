@@ -39,6 +39,11 @@ as_root() {
 }
 
 apt_install() {
+  if [[ "${SKIP_APT_INSTALL:-0}" == "1" ]]; then
+    echo "Skipping apt package install; handled by workflow."
+    return
+  fi
+
   if ! command -v apt-get >/dev/null 2>&1; then
     echo "ERROR: setup-build-env.sh currently supports Debian/Ubuntu apt-get environments only." >&2
     exit 1
