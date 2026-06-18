@@ -20,11 +20,9 @@
 
 set -euo pipefail
 
-TYPST_VERSION="${TYPST_VERSION:-0.14.2}"
-TYPST_ARCH="${TYPST_ARCH:-x86_64-unknown-linux-musl}"
-TYPST_SHA256="${TYPST_SHA256:-a6044cbad2a954deb921167e257e120ac0a16b20339ec01121194ff9d394996d}"
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tools/bin/build-env-common.sh
+source "$SCRIPT_DIR/build-env-common.sh"
 CHECK_SCRIPT="$SCRIPT_DIR/check-build-env.py"
 
 as_root() {
@@ -39,8 +37,8 @@ as_root() {
 }
 
 apt_install() {
-  if [[ "${SKIP_APT_INSTALL:-0}" == "1" ]]; then
-    echo "Skipping apt package install; handled by workflow."
+  if [[ "${SKIP_APT_INSTALL:-0}" == "1" || "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    echo "Skipping apt package install; handled by workflow or caller."
     return
   fi
 
@@ -55,24 +53,8 @@ apt_install() {
 
   as_root apt-get update -qq
 
-  as_root apt-get install -y --no-install-recommends \
-    ca-certificates \
-    curl \
-    fontconfig \
-    fonts-ebgaramond \
-    fonts-texgyre \
-    git \
-    pandoc \
-    python3 \
-    python3-pip \
-    xz-utils \
-    libcairo2 \
-    libpango-1.0-0 \
-    libpangoft2-1.0-0 \
-    libpangocairo-1.0-0 \
-    libharfbuzz0b \
-    libharfbuzz-subset0 \
-    shared-mime-info
+  mapfile -t apt_packages < <(read_build_apt_packages)
+  as_root apt-get install -y --no-install-recommends "${apt_packages[@]}"
 }
 
 pip_supports_break_system_packages() {
@@ -87,20 +69,21 @@ install_python_packages() {
 
   # Do NOT install/upgrade pip here.
   #
-  # On GitHub Actions ubuntu-24.04, pip is installed by Debian/Ubuntu as an apt
-  # package. Trying to upgrade it with pip causes:
+  # In Debian/Ubuntu system Python environments, pip may be apt-managed. Trying
+  # to upgrade pip with pip itself can fail with:
   #   ERROR: Cannot uninstall pip 24.0, RECORD file not found.
   #
-  # The book pipeline only needs these Python packages.
+  # The book pipeline only needs the packages pinned in requirements-build.txt.
   local pip_flags=()
   if pip_supports_break_system_packages; then
     pip_flags+=(--break-system-packages)
   fi
 
-  as_root python3 -m pip install "${pip_flags[@]}" --upgrade \
-    python-docx \
-    pypdf \
-    weasyprint
+  if [[ "${GITHUB_ACTIONS:-}" == "true" || -n "${VIRTUAL_ENV:-}" ]]; then
+    python3 -m pip install --upgrade -r "$BUILD_PYTHON_REQUIREMENTS_FILE"
+  else
+    as_root python3 -m pip install "${pip_flags[@]}" --upgrade -r "$BUILD_PYTHON_REQUIREMENTS_FILE"
+  fi
 }
 
 install_typst() {
