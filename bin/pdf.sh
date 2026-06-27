@@ -90,6 +90,7 @@ cp "$BOOK_TYP_SRC" "$BUILD_DIR/book.typ"
 WSS_SUPPRESS_TYPST_PREAMBLE=1 pandoc \
   -f markdown+smart+footnotes+pipe_tables+raw_tex \
   -t typst \
+  --wrap=none \
   --lua-filter "$LUA_FILTER" \
   -o "$BODY_TYP" \
   "$COMBINED_MD"

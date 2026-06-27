@@ -45,10 +45,14 @@ local function esc_typst_text(s)
   s = tostring(s or "")
   s = s:gsub("\\", "\\\\")
   s = s:gsub("#", "\\#")
+  s = s:gsub("@", "\\@")
+  s = s:gsub("~", "\\~")
   s = s:gsub("%[", "\\[")
   s = s:gsub("%]", "\\]")
   s = s:gsub("%$", "\\$")
+  s = s:gsub("%*", "\\*")
   s = s:gsub("_", "\\_")
+  s = s:gsub("`", "\\`")
   return s
 end
 
@@ -235,17 +239,8 @@ function Para(el)
   return { raw_block('#book.para(kind: "' .. kind .. '")['), pandoc.Plain(c), raw_block(']') }
 end
 
-function Note(el)
-  -- Flatten notes into a single inline footnote. Do NOT run paragraph
-  -- wrappers inside footnotes; that caused markers to sit on a separate line.
-  local parts = {}
-  for _, b in ipairs(el.content or {}) do
-    local s = trim(stringify(b))
-    if s ~= "" then table.insert(parts, s) end
-  end
-  local text = table.concat(parts, " ")
-  return raw_inline("#footnote[" .. esc_typst_text(text) .. "]")
-end
+-- Footnote serialization is defined after the inline serializer helpers.
+-- Notes must stay inline, but their internal inline markup must survive.
 
 function BlockQuote(el)
   local adjacent = previous_block_was_quote
@@ -402,14 +397,29 @@ end
 
 -- Serialize a single inline element to a Typst raw string.
 -- Mirrors the inline handlers (Emph, Strong, Quoted, Note) defined below.
-local inlines_to_typst  -- forward declaration; defined after inline_to_typst
+local inlines_to_typst      -- forward declaration; defined after inline_to_typst
+local note_blocks_to_typst  -- forward declaration; defined after inlines_to_typst
+
+local function attr_to_typst_string(s)
+  -- Escape for Typst quoted strings, not Typst content blocks.
+  s = tostring(s or "")
+  s = s:gsub("\\", "\\\\")
+  s = s:gsub('"', '\\"')
+  s = s:gsub("\r\n", "\n")
+  s = s:gsub("\r", "\n")
+  s = s:gsub("\n", "\\n")
+  return s
+end
+
 local function inline_to_typst(el)
   if el.t == "Str" then
-    return protect_emdashes_in_text(el.text)
+    return esc_typst_text(protect_emdashes_in_text(el.text))
   elseif el.t == "Space" or el.t == "SoftBreak" then
     return " "
   elseif el.t == "LineBreak" then
-    return " "
+    -- Keep footnotes/list-produced raw Typst inline. Hard Markdown breaks are
+    -- converted to an explicit Typst inline break, not a block paragraph.
+    return "#linebreak()"
   elseif el.t == "Emph" then
     return "#book.emph[" .. inlines_to_typst(el.content) .. "]"
   elseif el.t == "Strong" then
@@ -418,12 +428,7 @@ local function inline_to_typst(el)
     local kind = el.quotetype == "SingleQuote" and "single" or "double"
     return '#book.quoted(kind: "' .. kind .. '")[' .. inlines_to_typst(el.content) .. "]"
   elseif el.t == "Note" then
-    local parts = {}
-    for _, b in ipairs(el.content or {}) do
-      local s = trim(stringify(b))
-      if s ~= "" then table.insert(parts, s) end
-    end
-    return "#footnote[" .. esc_typst_text(table.concat(parts, " ")) .. "]"
+    return "#footnote[" .. note_blocks_to_typst(el.content or {}) .. "]"
   elseif el.t == "RawInline" and el.format == "html"
       and el.text:match("^%s*<!%-%-%s*pdf%-?br%s*%-%->%s*$") then
     -- PDF-only manual line-break control. In Markdown source, insert
@@ -434,11 +439,27 @@ local function inline_to_typst(el)
   elseif el.t == "RawInline" and el.format == "typst" then
     return el.text
   elseif el.t == "Code" then
-    return "`" .. el.text .. "`"
+    return "#raw(\"" .. attr_to_typst_string(el.text) .. "\")"
   elseif el.t == "Math" then
     return "$" .. el.text .. "$"
+  elseif el.t == "Link" then
+    -- Print-friendly: preserve the visible link text.  URLs are usually
+    -- already given in prose/citations in this project, and raw link styling
+    -- would be a typography change.
+    return inlines_to_typst(el.content or {})
+  elseif el.t == "Span" then
+    return inlines_to_typst(el.content or {})
+  elseif el.t == "SmallCaps" then
+    return "#smallcaps[" .. inlines_to_typst(el.content or {}) .. "]"
+  elseif el.t == "Superscript" then
+    return "#super[" .. inlines_to_typst(el.content or {}) .. "]"
+  elseif el.t == "Subscript" then
+    return "#sub[" .. inlines_to_typst(el.content or {}) .. "]"
+  elseif el.t == "Strikeout" then
+    return "#strike[" .. inlines_to_typst(el.content or {}) .. "]"
   else
-    -- Fallback: stringify and escape
+    -- Fallback: stringify and escape. This loses unknown semantic markup, but
+    -- remains Typst-safe and avoids reintroducing block wrappers in footnotes.
     return esc_typst_text(stringify(el))
   end
 end
@@ -451,6 +472,82 @@ inlines_to_typst = function(inlines)  -- assigns the forward-declared local
     table.insert(parts, inline_to_typst(il))
   end
   return table.concat(parts, "")
+end
+
+local function list_item_to_note_typst(item)
+  local parts = {}
+  for _, b in ipairs(item or {}) do
+    local s = nil
+    if b.t == "Para" or b.t == "Plain" then
+      s = inlines_to_typst(b.content or {})
+    else
+      s = note_blocks_to_typst({ b })
+    end
+    if trim(s) ~= "" then table.insert(parts, s) end
+  end
+  return table.concat(parts, " ")
+end
+
+local function block_to_note_typst(b)
+  if b.t == "Para" or b.t == "Plain" then
+    return inlines_to_typst(b.content or {})
+  elseif b.t == "BlockQuote" then
+    local parts = {}
+    for _, qb in ipairs(b.content or {}) do
+      local s = block_to_note_typst(qb)
+      if trim(s) ~= "" then table.insert(parts, s) end
+    end
+    return table.concat(parts, " ")
+  elseif b.t == "BulletList" then
+    local items = {}
+    for _, item in ipairs(b.content or {}) do
+      local s = list_item_to_note_typst(item)
+      if trim(s) ~= "" then table.insert(items, "• " .. s) end
+    end
+    return table.concat(items, "; ")
+  elseif b.t == "OrderedList" then
+    local items = {}
+    local start = 1
+    if b.start ~= nil then start = tonumber(b.start) or 1 end
+    for i, item in ipairs(b.content or {}) do
+      local s = list_item_to_note_typst(item)
+      if trim(s) ~= "" then table.insert(items, tostring(start + i - 1) .. ". " .. s) end
+    end
+    return table.concat(items, "; ")
+  elseif b.t == "LineBlock" then
+    local lines = {}
+    for _, line in ipairs(b.content or {}) do
+      local s = inlines_to_typst(line)
+      if trim(s) ~= "" then table.insert(lines, s) end
+    end
+    return table.concat(lines, "#linebreak()")
+  elseif b.t == "CodeBlock" then
+    return "#raw(\"" .. attr_to_typst_string(b.text) .. "\")"
+  elseif b.t == "HorizontalRule" then
+    return ""
+  else
+    return esc_typst_text(trim(stringify(b)))
+  end
+end
+
+note_blocks_to_typst = function(blocks)
+  -- Deliberately collapse multiple block-level items into inline content.
+  -- This preserves the old marker-layout fix while keeping inline markup.
+  local parts = {}
+  for _, b in ipairs(blocks or {}) do
+    local s = block_to_note_typst(b)
+    if trim(s) ~= "" then table.insert(parts, s) end
+  end
+  return table.concat(parts, " ")
+end
+
+function Note(el)
+  -- Keep notes as a single inline Typst footnote so the marker remains in
+  -- the paragraph. Do not run ordinary book.para()/block wrappers inside
+  -- notes; that was the source of the earlier marker-on-separate-line bug.
+  -- Also do not use stringify() for ordinary note text, because it discards
+  -- Emph/Strong/Quoted and similar inline formatting.
+  return raw_inline("#footnote[" .. note_blocks_to_typst(el.content or {}) .. "]")
 end
 
 
@@ -553,12 +650,17 @@ function OrderedList(el)
   return render_list(el.content, "+")
 end
 
-function Emph(el) return inlines_between("#book.emph[", el.content, "]") end
-function Strong(el) return inlines_between("#book.strong[", el.content, "]") end
+function Emph(el)
+  return raw_inline("#book.emph[" .. inlines_to_typst(el.content or {}) .. "]")
+end
+
+function Strong(el)
+  return raw_inline("#book.strong[" .. inlines_to_typst(el.content or {}) .. "]")
+end
 
 function Quoted(el)
   local kind = "double"
   if el.quotetype == "SingleQuote" then kind = "single" end
-  return inlines_between('#book.quoted(kind: "' .. kind .. '")[', el.content, "]")
+  return raw_inline('#book.quoted(kind: "' .. kind .. '")[' .. inlines_to_typst(el.content or {}) .. "]")
 end
 
