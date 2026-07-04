@@ -28,11 +28,5 @@ echo "Downloading artifact: $artifact_name"
 
 gh run download --name "$artifact_name" --dir "$OUT_DIR"
 
-# Flatten directory structure
-find "$OUT_DIR" -type f -name "*.docx" -exec mv -t "$OUT_DIR" {} +
-find "$OUT_DIR" -type f -name "*.epub" -exec mv -t "$OUT_DIR" {} +
-find "$OUT_DIR" -type f -name "*.pdf" -exec mv -t "$OUT_DIR" {} +
-find "$OUT_DIR" -mindepth 1 -type d -empty -delete
-
 echo "Done. Files in $OUT_DIR:"
 ls -1 "$OUT_DIR"
