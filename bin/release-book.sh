@@ -4,11 +4,11 @@ set -Eeuo pipefail
 usage() {
   cat <<'TXT'
 Usage:
-  ./release-book.sh <book1|book2> <version> [--yes]
+  tools/bin/release-book.sh <book1|book2> <version> [--yes]
 
 Examples:
-  ./release-book.sh book1 1.0.1
-  ./release-book.sh book2 1.0.0 --yes
+  tools/bin/release-book.sh book1 1.0.1
+  tools/bin/release-book.sh book2 1.0.0 --yes
 
 What it does:
   - requires the main branch
