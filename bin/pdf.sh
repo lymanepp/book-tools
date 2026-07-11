@@ -103,7 +103,6 @@ BACK_MATTER_BUILD="$BUILD_DIR/back-matter-$MODE.typ"
 
 {
   printf '#import "book.typ" as book\n'
-  printf '#import "publication-info.typ": publication\n'
   printf '#show: book.setup.with(title: "%s")\n\n' "$(typst_escape "$BOOK_TITLE")"
 
   if [[ -f "$FRONT_MATTER_SRC" ]]; then

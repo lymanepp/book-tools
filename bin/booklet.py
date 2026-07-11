@@ -381,6 +381,7 @@ def make_front_matter(title: str, subtitle: str, author: str, year: str,
 // Mirrors the 4-page structure of the real WSS book front-matter files.
 // pdf.sh appends toc-print.typ (p5/recto + p6/verso) automatically.
 #import "book.typ" as book
+#import "publication-info.typ": publication
 
 // ── Page 1: Title page (recto/odd) ───────────────────────────────────────────
 #book._suppress.update(true)
