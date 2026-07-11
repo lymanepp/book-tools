@@ -1,0 +1,31 @@
+name: Notify book repositories
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Dispatch pinned-tools update to consumers
+        env:
+          GH_TOKEN: ${{ secrets.BOOK_CONSUMER_DISPATCH_TOKEN }}
+          CONSUMERS_JSON: ${{ vars.BOOK_CONSUMERS }}
+          TOOLS_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "${CONSUMERS_JSON:-}" ]] || {
+            echo "Repository variable BOOK_CONSUMERS must be a JSON array of owner/repo names." >&2
+            exit 1
+          }
+          jq -r '.[]' <<<"$CONSUMERS_JSON" | while read -r repo; do
+            gh api --method POST "repos/$repo/dispatches" \
+              -f event_type=book-tools-updated \
+              -f "client_payload[tools_sha]=$TOOLS_SHA"
+          done

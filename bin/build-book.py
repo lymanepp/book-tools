@@ -167,12 +167,12 @@ def parse_bindings(value: str) -> list[str]:
     return result
 
 
-def run(cmd: list[str], root: Path, dry_run: bool) -> None:
+def run(cmd: list[str], root: Path, dry_run: bool, env: dict[str, str] | None = None) -> None:
     printable = " ".join(shlex.quote(c) for c in cmd)
     print(f"\n$ {printable}", flush=True)
     if dry_run:
         return
-    result = subprocess.run(cmd, cwd=str(root), check=False)
+    result = subprocess.run(cmd, cwd=str(root), check=False, env=env)
     if result.returncode != 0:
         raise SystemExit(result.returncode)
 
@@ -269,6 +269,11 @@ def main() -> None:
     covers.add_argument("--renderer", choices=["auto", "weasyprint", "wkhtmltopdf", "chrome", "chromium"], default="auto")
     covers.add_argument("--preview", action="store_true", help="Ask render-cover.py for preview PDFs.")
 
+    release = parser.add_argument_group("publication metadata")
+    release.add_argument("--release", action="store_true", help="Require a clean, tagged release build.")
+    release.add_argument("--release-tag", default=None, help="Release tag, e.g. book1-v1.0.0. Normally inferred from HEAD.")
+    release.add_argument("--release-date", default=None, help="ISO publication date. Defaults to tagged commit date.")
+    release.add_argument("--no-finalize", action="store_true", help="Do not write manifest and checksums after the build.")
     parser.add_argument("--dry-run", action="store_true", help="Print commands without running them.")
     args = parser.parse_args()
 
@@ -289,6 +294,15 @@ def main() -> None:
     is_booklet = bool(env.get("BOOKLET_CHAPTERS"))
     products = choose_products(args, book_dir, env)
     bindings = parse_bindings(args.bindings or env.get("BOOK_COVER_BINDINGS", "paperback hardcover"))
+
+    publication_cmd = ["python3", "tools/bin/publication.py", "prepare", rel(root, book_dir)]
+    if args.release:
+        publication_cmd.append("--release")
+    if args.release_tag:
+        publication_cmd.extend(["--tag", args.release_tag])
+    if args.release_date:
+        publication_cmd.extend(["--date", args.release_date])
+    run(publication_cmd, root, args.dry_run)
 
     print(f"Building target: {env['BOOK_TITLE']}", flush=True)
     print(f"Directory:       {rel(root, book_dir)}", flush=True)
@@ -335,6 +349,10 @@ def main() -> None:
 
     if products["epub"]:
         run(["bash", "tools/bin/epub.sh", rel(root, book_dir)], root, args.dry_run)
+
+    if not args.no_finalize and any(products.values()):
+        run(["python3", "tools/bin/publication.py", "verify", rel(root, book_dir)], root, args.dry_run)
+        run(["python3", "tools/bin/publication.py", "finalize", rel(root, book_dir)], root, args.dry_run)
 
     print("\nExpected artifacts:")
     if products["pdf"]:

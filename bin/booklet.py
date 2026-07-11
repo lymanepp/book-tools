@@ -435,7 +435,13 @@ def make_front_matter(title: str, subtitle: str, author: str, year: str,
   emph[{esc(source_title)}]
   [ by {esc(author)}. No part of this publication may be reproduced, stored in a retrieval system, or transmitted in any form or by any means without the prior written permission of the author, except for brief quotations used in reviews or scholarly works.]
   v(41.7pt)
-  [Scripture quotations are from the ESV\\u{{00AE}} Bible (The Holy Bible, English Standard Version\\u{{00AE}}), copyright \\u{{00A9}} 2001 by Crossway, a publishing ministry of Good News Publishers. Used by permission. All rights reserved.]{isbn_block}
+  [Scripture quotations are from the ESV\\u{{00AE}} Bible (The Holy Bible, English Standard Version\\u{{00AE}}), copyright \\u{{00A9}} 2001 by Crossway, a publishing ministry of Good News Publishers. Used by permission. All rights reserved.]
+  v(41.7pt)
+  [#publication.edition]
+  linebreak()
+  [Revision #publication.revision · #publication.date]
+  linebreak()
+  [Publication ID: #publication.id]{isbn_block}
   v(41.7pt)
   [Printed in the United States of America.]
 }}

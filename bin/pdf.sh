@@ -103,10 +103,12 @@ BACK_MATTER_BUILD="$BUILD_DIR/back-matter-$MODE.typ"
 
 {
   printf '#import "book.typ" as book\n'
+  printf '#import "publication-info.typ": publication\n'
   printf '#show: book.setup.with(title: "%s")\n\n' "$(typst_escape "$BOOK_TITLE")"
 
   if [[ -f "$FRONT_MATTER_SRC" ]]; then
     cp "$FRONT_MATTER_SRC" "$FRONT_MATTER_BUILD"
+    [[ -f "$BUILD_DIR/publication-info.typ" ]] || { echo "Missing publication metadata: $BUILD_DIR/publication-info.typ" >&2; exit 1; }
     printf "#include \"front-matter-$MODE.typ\"\n\n"
     TOC_SRC="$BIN_DIR/toc-$MODE.typ"
     cp "$TOC_SRC" "$BUILD_DIR/toc-$MODE.typ"
