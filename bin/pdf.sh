@@ -14,6 +14,7 @@ COMBINED_MD="$BUILD_DIR/$BOOK_NAME.combined.md"
 BODY_TYP="$BUILD_DIR/$BOOK_NAME.body.typ"
 GENERATED_TYP="$BUILD_DIR/$BOOK_NAME.typ"
 OUTPUT_PDF="$DIST_DIR/${BOOK_OUTPUT_BASENAME}-$MODE.pdf"
+BOOK_INFO_TYP="$BUILD_DIR/book-info.typ"
 
 require_files "$LUA_FILTER" "$BOOK_TYP_SRC"
 mkdir -p "$BUILD_DIR"
@@ -25,6 +26,23 @@ typst_escape() {
   s=${s//\"/\\\"}
   printf '%s' "$s"
 }
+
+
+# Generate one canonical Typst record from book.env. Front-matter templates
+# consume this instead of repeating book-specific identity data.
+{
+  printf '// Generated from %s. Do not edit.\n' "${BOOK_ENV#$ROOT/}"
+  printf '#let book_info = (\n'
+  printf '  title: "%s",\n' "$(typst_escape "$BOOK_TITLE")"
+  printf '  subtitle: "%s",\n' "$(typst_escape "$BOOK_SUBTITLE")"
+  printf '  author: "%s",\n' "$(typst_escape "$BOOK_AUTHOR")"
+  printf '  copyright_year: "%s",\n' "$(typst_escape "$BOOK_COPYRIGHT_YEAR")"
+  printf '  hardcover_isbn: "%s",\n' "$(typst_escape "$BOOK_HARDCOVER_ISBN")"
+  printf '  paperback_isbn: "%s",\n' "$(typst_escape "$BOOK_PAPERBACK_ISBN")"
+  printf '  scripture_notice: "%s",\n' "$(typst_escape "$BOOK_SCRIPTURE_NOTICE")"
+  printf '  source_title: "%s",\n' "$(typst_escape "$BOOKLET_SOURCE_TITLE")"
+  printf ')\n'
+} > "$BOOK_INFO_TYP"
 
 
 collect_chapters() {

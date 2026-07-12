@@ -25,6 +25,8 @@ book_build_init() {
 
   : "${BOOK_HARDCOVER_ISBN:=}"
   : "${BOOK_PAPERBACK_ISBN:=}"
+  : "${BOOK_SCRIPTURE_NOTICE:=}"
+  : "${BOOKLET_SOURCE_TITLE:=}"
   mkdir -p "$DIST_DIR"
   cd "$ROOT"
 }
