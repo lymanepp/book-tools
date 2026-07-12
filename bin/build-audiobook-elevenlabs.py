@@ -1,77 +1,5 @@
 #!/usr/bin/env python3
-"""
-build-audiobook-elevenlabs.py
-=============================
-ElevenLabs TTS narration builder — ACX/Audible compliant output.
-
-TWO-STAGE PIPELINE
-------------------
-Generation and post-processing are fully separate stages. Run them
-independently or together.
-
-  Stage 1 — GENERATE: calls ElevenLabs API, saves raw chunk MP3s.
-    Chunks are NEVER deleted after generation. A chapter is skipped
-    if all its chunks already exist. No API credits are spent twice.
-
-  Stage 2 — MASTER: merges chunks, applies ACX mastering, writes
-    final chapter MP3. Can be re-run with different parameters at
-    no API cost. A chapter is skipped if its final MP3 already exists.
-
-USAGE
------
-  # Full pipeline (generate + master)
-  python build-audiobook-elevenlabs.py --generate --master
-
-  # Generate only (all chapters, saves chunks)
-  python build-audiobook-elevenlabs.py --generate
-
-  # Master only (uses existing chunks, no API calls)
-  python build-audiobook-elevenlabs.py --master
-
-  # Specific chapters
-  python build-audiobook-elevenlabs.py --generate --master --chapters 01 05
-
-  # Dry run (preview chunking, no API calls)
-  python build-audiobook-elevenlabs.py --generate --dry-run
-
-  # Force re-master even if final MP3 exists (re-tune ACX params)
-  python build-audiobook-elevenlabs.py --master --force
-
-  # Force re-generation (re-spends API credits — use with care)
-  python build-audiobook-elevenlabs.py --generate --force
-
-  # ACX compliance check on a finished file
-  python build-audiobook-elevenlabs.py --check audiobook/01-chapter.mp3
-
-  # List voices in your ElevenLabs library
-  python build-audiobook-elevenlabs.py --list-voices
-
-DIRECTORY LAYOUT
-----------------
-  audiobook/
-    raw/                          # Stage 1 output — raw chunk files
-      01-the-republic.../
-        chunk-001.mp3
-        chunk-002.mp3
-        ...
-    01-the-republic....mp3        # Stage 2 output — ACX-ready final files
-    02-...mp3
-    ...
-
-REQUIREMENTS
-------------
-  pip install elevenlabs pydub numpy
-  ELEVENLABS_API_KEY in environment or .env file
-
-ACX SPECIFICATIONS (2026)
--------------------------
-  Format      : MP3, 192 kbps CBR, 44.1 kHz, Mono
-  RMS         : -23 to -18 dBFS  (targets -20 dBFS — centre of window)
-  Peak        : ≤ -3 dBFS
-  Noise floor : ≤ -60 dBFS       (not an issue for AI-generated audio)
-  Head silence: 0.5 s
-  Tail silence: 1.0 s
-"""
+"""Build ElevenLabs audiobook chapters and master them for ACX."""
 
 import os
 import re
@@ -82,11 +10,9 @@ import textwrap
 from pathlib import Path
 
 
-from audiobook_text import discover_chapters, strip_markdown
+from audiobook_text import discover_chapters, split_into_chunks, strip_markdown
 
-# ---------------------------------------------------------------------------
 # Configuration — Generation
-# ---------------------------------------------------------------------------
 
 BOOK_DIR  = Path(__file__).parent / "book1"
 OUTPUT_DIR = Path(__file__).parent / "audiobook"
@@ -132,9 +58,7 @@ CHUNK_LIMITS = {
     "eleven_flash_v2_5":     38000,   # hard limit 40,000
 }
 
-# ---------------------------------------------------------------------------
 # Configuration — Post-processing (ACX mastering)
-# ---------------------------------------------------------------------------
 # These can be adjusted and --master re-run at no API cost.
 
 ACX_TARGET_RMS_DBFS   = -20.0   # aim for centre of ACX window (-23 to -18)
@@ -144,9 +68,7 @@ ACX_RMS_MAX_DBFS      = -18.0   # ACX ceiling (do not change)
 HEAD_SILENCE_MS       =   500   # 0.5 s — ACX minimum is 0.5 s
 TAIL_SILENCE_MS       =  1000   # 1.0 s — ACX minimum is 1.0 s
 
-# ---------------------------------------------------------------------------
 # File layout
-# ---------------------------------------------------------------------------
 
 def raw_dir(output_dir: Path, slug: str) -> Path:
     """Directory where raw chunk files for a chapter are stored."""
@@ -158,14 +80,7 @@ def final_path(output_dir: Path, slug: str) -> Path:
     return output_dir / f"{slug}.mp3"
 
 
-def chunk_paths_for(output_dir: Path, slug: str) -> list[Path]:
-    """Return sorted list of existing chunk files for a chapter."""
-    return sorted(raw_dir(output_dir, slug).glob("chunk-*.mp3"))
-
-
-# ---------------------------------------------------------------------------
 # Credit / cost estimation
-# ---------------------------------------------------------------------------
 
 def estimate_credits(chapters: list[tuple[str, Path]], model: str) -> tuple:
     total = sum(
@@ -183,9 +98,7 @@ def estimate_credits(chapters: list[tuple[str, Path]], model: str) -> tuple:
     return total, credits, f"~${cost:.2f}"
 
 
-# ---------------------------------------------------------------------------
 # Stage 1 — Generation
-# ---------------------------------------------------------------------------
 
 def get_client(api_key: str):
     try:
@@ -228,13 +141,6 @@ def api_narrate_chunk(client, text: str, voice_id: str, model: str,
 def generate_chapter(client, slug: str, md_path: Path, output_dir: Path,
                      voice_id: str, model: str, el_format: str,
                      dry_run: bool, force: bool) -> bool:
-    """
-    Stage 1: generate raw chunk MP3s from markdown source.
-
-    Returns True if any API calls were made, False if all chunks existed.
-    Chunks are NEVER deleted. A chunk is skipped if it already exists,
-    unless --force is passed (which re-spends API credits).
-    """
     raw     = md_path.read_text(encoding='utf-8')
     plain   = strip_markdown(raw)
     max_ch  = CHUNK_LIMITS.get(model, 2800)
@@ -282,45 +188,24 @@ def generate_chapter(client, slug: str, md_path: Path, output_dir: Path,
     return any_generated
 
 
-# ---------------------------------------------------------------------------
 # Stage 2 — Post-processing / ACX mastering
-# ---------------------------------------------------------------------------
 
 def master_for_acx(audio):
-    """
-    Apply ACX-compliant mastering to a pydub AudioSegment.
-
-    Steps (all parameters tunable in the Configuration section above):
-      1. Convert to mono
-      2. Set sample rate to 44.1 kHz
-      3. Normalize RMS to ACX_TARGET_RMS_DBFS (-20 dBFS by default)
-      4. Apply peak limiter at ACX_PEAK_CEILING_DBFS (-3 dBFS by default)
-      5. Warn if RMS fell below ACX floor after peak limiting
-      6. Pad with head and tail silence
-
-    To re-tune: adjust the ACX_* / HEAD_SILENCE_MS / TAIL_SILENCE_MS
-    constants at the top of this file and re-run --master. No API cost.
-    """
     import numpy as np
     from pydub import AudioSegment
 
-    # 1. Mono
     audio = audio.set_channels(1)
 
-    # 2. Sample rate
     audio = audio.set_frame_rate(44100)
 
-    # 3. RMS normalization
     if audio.rms > 0:
         current_dbfs = 20 * np.log10(audio.rms / 32768.0)
         gain = ACX_TARGET_RMS_DBFS - current_dbfs
         audio = audio.apply_gain(gain)
 
-    # 4. Peak limiter
     if audio.max_dBFS > ACX_PEAK_CEILING_DBFS:
         audio = audio.apply_gain(ACX_PEAK_CEILING_DBFS - audio.max_dBFS)
 
-    # 5. RMS window check after limiting
     if audio.rms > 0:
         final_rms = 20 * np.log10(audio.rms / 32768.0)
         if not (ACX_RMS_MIN_DBFS <= final_rms <= ACX_RMS_MAX_DBFS):
@@ -328,7 +213,6 @@ def master_for_acx(audio):
                   f"ACX window ({ACX_RMS_MIN_DBFS} to {ACX_RMS_MAX_DBFS} dBFS). "
                   f"Adjust ACX_TARGET_RMS_DBFS or ACX_PEAK_CEILING_DBFS and re-run --master.")
 
-    # 6. Head and tail silence
     head = AudioSegment.silent(duration=HEAD_SILENCE_MS, frame_rate=44100).set_channels(1)
     tail = AudioSegment.silent(duration=TAIL_SILENCE_MS, frame_rate=44100).set_channels(1)
     return head + audio + tail
@@ -336,13 +220,6 @@ def master_for_acx(audio):
 
 def master_chapter(slug: str, output_dir: Path,
                    book_title: str, force: bool) -> bool:
-    """
-    Stage 2: merge raw chunks, apply ACX mastering, write final MP3.
-
-    Returns True on success, False if skipped or no chunks found.
-    Skips if final MP3 already exists, unless --force is passed.
-    Re-running --master with different ACX parameters costs nothing.
-    """
     fp    = final_path(output_dir, slug)
     rdir  = raw_dir(output_dir, slug)
     cpaths = sorted(rdir.glob("chunk-*.mp3"))
@@ -400,9 +277,7 @@ def master_chapter(slug: str, output_dir: Path,
     return True
 
 
-# ---------------------------------------------------------------------------
 # ACX compliance checker
-# ---------------------------------------------------------------------------
 
 def acx_check(path: Path) -> dict:
     """Measure a file against all ACX specifications."""
@@ -467,9 +342,7 @@ def print_acx_report(path: Path) -> None:
     print(f"\n  {'PASS — ACX submission ready' if all_pass else 'FAIL — see issues above'}\n")
 
 
-# ---------------------------------------------------------------------------
 # CLI
-# ---------------------------------------------------------------------------
 
 def parse_args():
     p = argparse.ArgumentParser(
@@ -526,74 +399,43 @@ def parse_args():
 
 
 def load_api_key() -> str | None:
-    key = os.environ.get('ELEVENLABS_API_KEY')
-    if key:
+    if key := os.environ.get('ELEVENLABS_API_KEY'):
         return key
     env_path = Path(__file__).parent / '.env'
-    if env_path.exists():
-        for line in env_path.read_text().splitlines():
-            line = line.strip()
-            if line.startswith('ELEVENLABS_API_KEY='):
-                return line.split('=', 1)[1].strip().strip('"').strip("'")
+    if not env_path.exists():
+        return None
+    for line in env_path.read_text().splitlines():
+        if line.strip().startswith('ELEVENLABS_API_KEY='):
+            return line.split('=', 1)[1].strip().strip('"\'')
     return None
 
 
-def main():
-    args    = parse_args()
-    api_key = load_api_key()
+def fail(message: str) -> None:
+    print(f"ERROR: {message}", file=sys.stderr)
+    raise SystemExit(1)
 
-    # ── Utility modes ────────────────────────────────────────────────────────
 
-    if args.check:
-        p = Path(args.check)
-        if not p.exists():
-            print(f"ERROR: file not found: {p}", file=sys.stderr)
-            sys.exit(1)
-        print_acx_report(p)
-        sys.exit(0)
-
-    if args.list_voices:
-        if not api_key:
-            print("ERROR: ELEVENLABS_API_KEY not set.", file=sys.stderr)
-            sys.exit(1)
-        list_voices(get_client(api_key))
-        sys.exit(0)
-
-    # ── Validate stage selection ─────────────────────────────────────────────
-
-    if not args.generate and not args.master:
-        print("ERROR: specify at least one stage: --generate and/or --master",
-              file=sys.stderr)
-        print("  Run with --help for usage.", file=sys.stderr)
-        sys.exit(1)
-
-    # ── Discover chapters ────────────────────────────────────────────────────
-
-    book_dir   = Path(args.book_dir)
-    output_dir = Path(args.output_dir)
-
+def select_chapters(book_dir: Path, prefixes: list[str] | None):
     if not book_dir.exists():
-        print(f"ERROR: book directory not found: {book_dir}", file=sys.stderr)
-        sys.exit(1)
-
-    all_chapters = discover_chapters(book_dir)
-    if not all_chapters:
-        print(f"ERROR: no .md files found in {book_dir}", file=sys.stderr)
-        sys.exit(1)
-
-    chapters = all_chapters
-    if args.chapters:
-        chapters = [(s, p) for s, p in all_chapters
-                    if any(s.startswith(pr) for pr in args.chapters)]
+        fail(f"book directory not found: {book_dir}")
+    chapters = discover_chapters(book_dir)
+    if not chapters:
+        fail(f"no .md files found in {book_dir}")
+    if prefixes:
+        chapters = [
+            chapter for chapter in chapters
+            if any(chapter[0].startswith(prefix) for prefix in prefixes)
+        ]
         if not chapters:
-            print(f"ERROR: no chapters matched prefixes: {args.chapters}",
-                  file=sys.stderr)
-            sys.exit(1)
+            fail(f"no chapters matched prefixes: {prefixes}")
+    return chapters
 
-    # ── Print run summary ────────────────────────────────────────────────────
 
+def print_run_summary(args, book_dir: Path, output_dir: Path, chapters) -> None:
     stages = ' + '.join(
-        s for s, on in [('generate', args.generate), ('master', args.master)] if on
+        stage for stage, enabled in (
+            ('generate', args.generate), ('master', args.master)
+        ) if enabled
     )
     print(f"\nBook           : {args.book_title}")
     print(f"Stages         : {stages}")
@@ -608,91 +450,95 @@ def main():
         print(f"EL format      : {EL_FORMAT}")
         print(f"Total chars    : {total_chars:,}")
         print(f"Credits        : ~{credits:,}  (est. pay-as-you-go {est_cost})")
-        print(f"Chunk safety   : existing chunks skipped unless --force")
+        print("Chunk safety   : existing chunks skipped unless --force")
 
     if args.master:
         print(f"ACX RMS target : {ACX_TARGET_RMS_DBFS} dBFS  "
               f"(window: {ACX_RMS_MIN_DBFS} to {ACX_RMS_MAX_DBFS})")
         print(f"ACX peak ceil  : {ACX_PEAK_CEILING_DBFS} dBFS")
         print(f"Head / tail    : {HEAD_SILENCE_MS} ms / {TAIL_SILENCE_MS} ms")
-        print(f"Final MP3      : existing files skipped unless --force")
+        print("Final MP3      : existing files skipped unless --force")
 
     if args.force:
-        print(f"Force          : ON — existing files will be overwritten")
+        print("Force          : ON — existing files will be overwritten")
     if args.dry_run:
-        print(f"\n*** DRY RUN — no API calls will be made ***")
+        print("\n*** DRY RUN — no API calls will be made ***")
 
-    # ── Validate voice ID before starting ───────────────────────────────────
 
-    if args.generate and not args.dry_run:
-        if args.voice_id == "REPLACE_WITH_YOUR_VOICE_ID":
-            print("\nERROR: VOICE_ID not set.\n"
-                  "  Run --list-voices, choose a voice, then set VOICE_ID\n"
-                  "  at the top of this script or pass --voice-id <id>.",
-                  file=sys.stderr)
-            sys.exit(1)
+def generation_client(args, api_key: str | None):
+    if not args.generate or args.dry_run:
+        return None
+    if args.voice_id == "REPLACE_WITH_YOUR_VOICE_ID":
+        fail("VOICE_ID not set. Run --list-voices, then set VOICE_ID or pass --voice-id <id>.")
+    if not api_key:
+        fail("ELEVENLABS_API_KEY not set. Export it or add it to tools/bin/.env.")
+    return get_client(api_key)
+
+
+def require_master_dependencies() -> None:
+    try:
+        import numpy, pydub  # noqa: F401
+    except ImportError:
+        fail("pip install pydub numpy")
+
+
+def print_outputs(output_dir: Path) -> None:
+    finals = sorted(output_dir.glob('*.mp3'))
+    if finals:
+        print(f"\nFinal MP3s ({len(finals)}):")
+        for path in finals:
+            print(f"  {path.name}  ({path.stat().st_size / (1024*1024):.1f} MB)")
+    raw_root = output_dir / "raw"
+    if raw_root.exists():
+        raw_count = sum(1 for _ in raw_root.rglob("chunk-*.mp3"))
+        print(f"Raw chunks     : {raw_count} files in {raw_root}")
+    print("\nRun --check <file> on any final MP3 to verify ACX compliance.")
+
+
+def main():
+    args = parse_args()
+    api_key = load_api_key()
+
+    if args.check:
+        path = Path(args.check)
+        if not path.exists():
+            fail(f"file not found: {path}")
+        print_acx_report(path)
+        return
+
+    if args.list_voices:
         if not api_key:
-            print("\nERROR: ELEVENLABS_API_KEY not set.\n"
-                  "  export ELEVENLABS_API_KEY=your_key_here\n"
-                  "  or add to a .env file next to this script.",
-                  file=sys.stderr)
-            sys.exit(1)
-        client = get_client(api_key)
-    else:
-        client = None
+            fail("ELEVENLABS_API_KEY not set.")
+        list_voices(get_client(api_key))
+        return
 
+    if not (args.generate or args.master):
+        fail("specify at least one stage: --generate and/or --master\n  Run with --help for usage.")
+
+    book_dir = Path(args.book_dir)
+    output_dir = Path(args.output_dir)
+    chapters = select_chapters(book_dir, args.chapters)
+    print_run_summary(args, book_dir, output_dir, chapters)
+    client = generation_client(args, api_key)
     if args.master:
-        try:
-            import numpy, pydub  # noqa: F401
-        except ImportError:
-            print("ERROR: pip install pydub numpy", file=sys.stderr)
-            sys.exit(1)
-
+        require_master_dependencies()
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    # ── Run pipeline ─────────────────────────────────────────────────────────
 
     print()
     start = time.time()
-
-    for idx, (slug, md_path) in enumerate(chapters, 1):
-        print(f"[{idx}/{len(chapters)}] {slug}")
-
+    for index, (slug, md_path) in enumerate(chapters, 1):
+        print(f"[{index}/{len(chapters)}] {slug}")
         if args.generate:
             generate_chapter(
-                client=client,
-                slug=slug,
-                md_path=md_path,
-                output_dir=output_dir,
-                voice_id=args.voice_id,
-                model=args.model,
-                el_format=EL_FORMAT,
-                dry_run=args.dry_run,
-                force=args.force,
+                client, slug, md_path, output_dir, args.voice_id,
+                args.model, EL_FORMAT, args.dry_run, args.force,
             )
-
         if args.master and not args.dry_run:
-            master_chapter(
-                slug=slug,
-                output_dir=output_dir,
-                book_title=args.book_title,
-                force=args.force,
-            )
+            master_chapter(slug, output_dir, args.book_title, args.force)
 
-    elapsed = time.time() - start
-    print(f"\nDone in {elapsed:.1f}s")
-
+    print(f"\nDone in {time.time() - start:.1f}s")
     if not args.dry_run:
-        finals = sorted(output_dir.glob('*.mp3'))
-        if finals:
-            print(f"\nFinal MP3s ({len(finals)}):")
-            for f in finals:
-                print(f"  {f.name}  ({f.stat().st_size / (1024*1024):.1f} MB)")
-        raw_root = output_dir / "raw"
-        if raw_root.exists():
-            raw_count = sum(1 for _ in raw_root.rglob("chunk-*.mp3"))
-            print(f"Raw chunks     : {raw_count} files in {raw_root}")
-        print("\nRun --check <file> on any final MP3 to verify ACX compliance.")
+        print_outputs(output_dir)
 
 
 if __name__ == '__main__':

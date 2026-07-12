@@ -71,6 +71,56 @@ def strip_markdown(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(output)).strip()
 
 
+def split_into_chunks(text: str, max_chars: int) -> list[str]:
+    """Split text at paragraph or sentence boundaries."""
+    sentence_end = re.compile(r"(?<=[.!?])\s+")
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+
+    def flush() -> None:
+        nonlocal current_len
+        if current:
+            chunks.append("\n\n".join(current).strip())
+            current.clear()
+            current_len = 0
+
+    for paragraph in re.split(r"\n\n+", text):
+        paragraph = paragraph.strip()
+        if not paragraph:
+            continue
+        if current_len + len(paragraph) + 2 <= max_chars:
+            current.append(paragraph)
+            current_len += len(paragraph) + 2
+            continue
+
+        flush()
+        if len(paragraph) <= max_chars:
+            current.append(paragraph)
+            current_len = len(paragraph) + 2
+            continue
+
+        sentence_chunk: list[str] = []
+        sentence_len = 0
+        for sentence in sentence_end.split(paragraph):
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+            if sentence_len + len(sentence) + 1 <= max_chars:
+                sentence_chunk.append(sentence)
+                sentence_len += len(sentence) + 1
+            else:
+                if sentence_chunk:
+                    chunks.append(" ".join(sentence_chunk))
+                sentence_chunk = [sentence]
+                sentence_len = len(sentence) + 1
+        if sentence_chunk:
+            chunks.append(" ".join(sentence_chunk))
+
+    flush()
+    return chunks
+
+
 def discover_chapters(book_dir: Path) -> list[tuple[str, Path]]:
     return [
         (path.stem, path)
