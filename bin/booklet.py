@@ -398,7 +398,7 @@ def make_front_matter(title: str, subtitle: str, author: str, year: str,
   linebreak()
   [Revision #publication.revision · #publication.date]
   linebreak()
-  [Publication ID: #publication.id]{isbn_block}
+  {isbn_block}
   v(41.7pt)
   [Printed in the United States of America.]
 }}

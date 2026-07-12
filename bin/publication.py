@@ -64,7 +64,6 @@ def resolve_context(root: Path, target: Path, cfg: dict[str, str], requested_tag
         if not cfg.get(key):
             raise SystemExit(f"{target / 'book.env'} must define {key}")
     cfg = dict(cfg)
-    cfg.setdefault("BOOK_PUBLICATION_CODE", re.sub(r"[^A-Za-z0-9]+", "-", cfg["BOOK_OUTPUT_BASENAME"]).strip("-").upper())
     cfg.setdefault("BOOK_RELEASE_SLUG", target.name)
     cfg.setdefault("BOOK_EDITION_LABEL", "First edition")
 
@@ -99,24 +98,20 @@ def resolve_context(root: Path, target: Path, cfg: dict[str, str], requested_tag
     if kind == "release":
         release_date = requested_date or os.environ.get("BOOK_RELEASE_DATE") or iso_from_epoch(int(state["commitEpoch"]))
         dt.date.fromisoformat(release_date)
-        publication_id = f"{cfg['BOOK_PUBLICATION_CODE']}-{version}"
         display_revision = version
     else:
         release_date = requested_date or iso_from_epoch(int(state["commitEpoch"]))
         dirty_suffix = ".dirty" if state["dirty"] else ""
-        publication_id = f"{cfg['BOOK_PUBLICATION_CODE']}-dev.{state['shortCommit']}{dirty_suffix}"
         display_revision = f"draft {state['shortCommit']}{dirty_suffix}"
 
     return {
         "schemaVersion": 1,
         "publication": {
-            "code": cfg["BOOK_PUBLICATION_CODE"],
             "slug": cfg["BOOK_RELEASE_SLUG"],
             "title": cfg["BOOK_TITLE"],
             "subtitle": cfg.get("BOOK_SUBTITLE", ""),
             "editionLabel": cfg["BOOK_EDITION_LABEL"],
             "revision": version or display_revision,
-            "publicationId": publication_id,
             "releaseDate": release_date,
             "releaseDateDisplay": human_date(release_date),
             "kind": kind,
@@ -148,7 +143,6 @@ def write_typst(path: Path, ctx: dict[str, object]) -> None:
         f"  revision: {typst_string(str(p['revision']))},",
         f"  date: {typst_string(str(p['releaseDateDisplay']))},",
         f"  iso_date: {typst_string(str(p['releaseDate']))},",
-        f"  id: {typst_string(str(p['publicationId']))},",
         f"  tag: {typst_string(str(p['tag']))},",
         f"  git_sha: {typst_string(str(s['commit']))},",
         f"  git_short_sha: {typst_string(str(s['shortCommit']))},",
@@ -203,7 +197,7 @@ def verify_pdf(root: Path, cfg: dict[str, str], context_path: Path) -> None:
         return "".join(char for char in normalized if char.isalnum())
 
     canonical_text = canonical(text)
-    expected = [ctx["publication"]["editionLabel"], ctx["publication"]["revision"], ctx["publication"]["publicationId"]]
+    expected = [ctx["publication"]["editionLabel"], ctx["publication"]["revision"]]
     missing = [item for item in expected if item and canonical(item) not in canonical_text]
     if ctx["publication"]["kind"] == "release" and "DRAFT" in text:
         missing.append("absence of DRAFT marker")
