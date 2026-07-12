@@ -13,11 +13,13 @@ import subprocess
 import sys
 import unicodedata
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from book_tools_common import load_env
 
 SEMVER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 TAG_RE = re.compile(r"^(?P<slug>[a-z0-9][a-z0-9-]*)-v(?P<version>\d+\.\d+\.\d+)$")
+EASTERN = ZoneInfo("America/New_York")
 
 
 def run_git(root: Path, *args: str, check: bool = True) -> str:
@@ -32,8 +34,9 @@ def typst_string(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def iso_from_epoch(epoch: int) -> str:
-    return dt.datetime.fromtimestamp(epoch, dt.timezone.utc).date().isoformat()
+def eastern_date_from_epoch(epoch: int) -> str:
+    """Return the calendar date for a Unix timestamp in America/New_York."""
+    return dt.datetime.fromtimestamp(epoch, EASTERN).date().isoformat()
 
 
 def human_date(value: str) -> str:
@@ -96,11 +99,11 @@ def resolve_context(root: Path, target: Path, cfg: dict[str, str], requested_tag
         raise SystemExit("Release build requires a clean main repository and submodule state")
 
     if kind == "release":
-        release_date = requested_date or os.environ.get("BOOK_RELEASE_DATE") or iso_from_epoch(int(state["commitEpoch"]))
+        release_date = requested_date or os.environ.get("BOOK_RELEASE_DATE") or eastern_date_from_epoch(int(state["commitEpoch"]))
         dt.date.fromisoformat(release_date)
         display_revision = version
     else:
-        release_date = requested_date or iso_from_epoch(int(state["commitEpoch"]))
+        release_date = requested_date or eastern_date_from_epoch(int(state["commitEpoch"]))
         dirty_suffix = ".dirty" if state["dirty"] else ""
         display_revision = f"draft {state['shortCommit']}{dirty_suffix}"
 
@@ -124,7 +127,7 @@ def resolve_context(root: Path, target: Path, cfg: dict[str, str], requested_tag
         },
         "build": {
             "sourceDateEpoch": int(state["commitEpoch"]),
-            "generatedAt": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat(),
+            "generatedAt": dt.datetime.now(EASTERN).replace(microsecond=0).isoformat(),
             "githubRunId": os.environ.get("GITHUB_RUN_ID", ""),
             "githubRunAttempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
         },

@@ -92,6 +92,65 @@
   text(font: _body-font, size: size, weight: weight, style: style, lang: "en", hyphenate: _hyphenate)[#body]
 }
 
+// Compact copyright-page colophon with a deliberate vertical position.
+// Keep related lines together; do not distribute the block to the page bottom.
+#let copyright_page(
+  title: none,
+  subtitle: none,
+  author: none,
+  year: none,
+  publication: none,
+  source_note: none,
+  isbn_block: none,
+) = {
+  set text(font: _body-font, size: 10pt)
+  set par(
+    justify: false,
+    leading: 5.8pt,
+    spacing: 0pt,
+    first-line-indent: (amount: 0pt, all: true),
+  )
+
+  // Approximately matches the placement of the Founders Press example:
+  // about 1.7 inches from the physical top of a 6×9 page.
+  v(1.0in)
+
+  _b-strong(title)
+  v(2pt)
+  _b-emph(subtitle)
+
+  v(22pt)
+  [© #year #author]
+
+  if source_note != none {
+    v(18pt)
+    source_note
+  }
+
+  v(22pt)
+  [All rights reserved. No part of this publication may be reproduced, stored in a retrieval system, or transmitted in any form or by any means, electronic, mechanical, photocopying, recording, or otherwise, without the prior written permission of the author, except for brief quotations used in reviews or scholarly works.]
+
+  v(20pt)
+  {
+    set text(size: 9.5pt)
+
+    [#publication.edition · Revision #publication.revision]
+    linebreak()
+    [#publication.date]
+
+    if isbn_block != none {
+      v(14pt)
+      isbn_block
+    }
+
+    v(14pt)
+    [Printed in the United States of America.]
+  }
+
+  v(20pt)
+  [Scripture quotations are from the ESV® Bible (The Holy Bible, English Standard Version®), copyright © 2001 by Crossway, a publishing ministry of Good News Publishers. Used by permission. All rights reserved.]
+}
+
 #let setup(doc, title: "") = {
   let _effective-title = if title != "" { title } else { _book-title }
   set document(title: _effective-title)
