@@ -11,6 +11,7 @@ from pathlib import Path
 
 
 from audiobook_text import discover_chapters, split_into_chunks, strip_markdown
+from book_tools_common import load_env
 
 # Configuration — Generation
 
@@ -374,8 +375,7 @@ def parse_args():
     p.add_argument('--book-dir',   default=str(BOOK_DIR))
     p.add_argument('--output-dir', default=str(OUTPUT_DIR))
     p.add_argument('--book-title',
-                   default="How the Left Lost Its Grip on Reality",
-                   help='Book title written into MP3 metadata')
+                   help='Book title written into MP3 metadata; defaults to BOOK_TITLE in book.env')
     p.add_argument('--voice-id',   default=VOICE_ID)
     p.add_argument('--model',      default=MODEL,
                    choices=['eleven_v3', 'eleven_multilingual_v2',
@@ -517,6 +517,13 @@ def main():
 
     book_dir = Path(args.book_dir)
     output_dir = Path(args.output_dir)
+    if args.book_title is None:
+        env_path = book_dir / 'book.env'
+        if not env_path.is_file():
+            fail(f'book metadata not found: {env_path}')
+        args.book_title = load_env(env_path).get('BOOK_TITLE')
+        if not args.book_title:
+            fail(f'BOOK_TITLE is not set in {env_path}')
     chapters = select_chapters(book_dir, args.chapters)
     print_run_summary(args, book_dir, output_dir, chapters)
     client = generation_client(args, api_key)
