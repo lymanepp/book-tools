@@ -3,30 +3,125 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
-OUT_DIR="artifacts"
+OUT_DIR="${REPO_ROOT}/artifacts"
+DOWNLOAD_DIR="${OUT_DIR}/.download"
 
-artifact_name="${1:-}"
+read_repo_value() {
+  local key="$1"
 
-# Resolve from repo.yml if not provided
-if [[ -z "$artifact_name" ]]; then
-  if [[ -f "${REPO_ROOT}/repo.yml" ]]; then
-    artifact_name="$(grep -E '^artifact_basename:' "${REPO_ROOT}/repo.yml" | awk '{print $2}')"
-  fi
+  awk -F: -v key="$key" '
+    $1 == key {
+      sub(/^[^:]*:[[:space:]]*/, "")
+      sub(/[[:space:]]+#.*$/, "")
+      gsub(/^[[:space:]\047\042]+|[[:space:]\047\042]+$/, "")
+      print
+      exit
+    }
+  ' "${REPO_ROOT}/repo.yml"
+}
+
+artifact_basename=""
+artifact_targets=""
+
+if [[ -f "${REPO_ROOT}/repo.yml" ]]; then
+  artifact_basename="$(read_repo_value artifact_basename)"
+  artifact_targets="$(read_repo_value artifact_targets)"
 fi
 
-# Final validation
-if [[ -z "${artifact_name:-}" ]]; then
-  echo "ERROR: Artifact name not provided and not found in repo.yml" >&2
-  echo "Usage: $0 <artifact-name>" >&2
+if [[ -z "$artifact_basename" ]]; then
+  echo "ERROR: artifact_basename is not defined in ${REPO_ROOT}/repo.yml" >&2
   exit 1
 fi
 
+resolve_artifact_names() {
+  local selector="${1:-}"
+  local target
+
+  if [[ -n "$selector" ]]; then
+    case "$selector" in
+      "${artifact_basename}"-*) printf '%s\n' "$selector" ;;
+      *) printf '%s\n' "${artifact_basename}-${selector}" ;;
+    esac
+    return
+  fi
+
+  if [[ -z "$artifact_targets" ]]; then
+    printf '%s\n' "$artifact_basename"
+    return
+  fi
+
+  for target in $artifact_targets; do
+    printf '%s\n' "${artifact_basename}-${target}"
+  done
+}
+
+download_latest_artifact() {
+  local artifact_name="$1"
+  local artifact_id
+  local archive_path="${DOWNLOAD_DIR}/${artifact_name}.zip"
+  local extract_dir="${DOWNLOAD_DIR}/${artifact_name}"
+
+  artifact_id="$(
+    gh api \
+      -H 'Accept: application/vnd.github+json' \
+      -H 'X-GitHub-Api-Version: 2022-11-28' \
+      "repos/{owner}/{repo}/actions/artifacts?name=${artifact_name}&per_page=100" \
+      --jq '.artifacts
+        | map(select(.expired == false))
+        | sort_by(.created_at)
+        | reverse
+        | .[0].id // empty'
+  )"
+
+  if [[ -z "$artifact_id" ]]; then
+    echo "ERROR: No unexpired artifact named '${artifact_name}' was found." >&2
+    exit 1
+  fi
+
+  echo "Downloading latest artifact: ${artifact_name}"
+  gh api \
+    -H 'Accept: application/vnd.github+json' \
+    -H 'X-GitHub-Api-Version: 2022-11-28' \
+    "repos/{owner}/{repo}/actions/artifacts/${artifact_id}/zip" \
+    > "$archive_path"
+
+  mkdir -p "$extract_dir"
+  unzip -q "$archive_path" -d "$extract_dir"
+}
+
 rm -rf "$OUT_DIR"
-mkdir -p "$OUT_DIR"
+mkdir -p "$DOWNLOAD_DIR"
 
-echo "Downloading artifact: $artifact_name"
+mapfile -t artifact_names < <(resolve_artifact_names "${1:-}")
 
-gh run download --name "$artifact_name" --dir "$OUT_DIR"
+for artifact_name in "${artifact_names[@]}"; do
+  download_latest_artifact "$artifact_name"
+done
+
+while IFS= read -r -d '' source; do
+  filename="$(basename "$source")"
+  destination="${OUT_DIR}/${filename}"
+
+  if [[ -e "$destination" ]]; then
+    echo "ERROR: Downloaded artifacts contain duplicate file '${filename}'." >&2
+    exit 1
+  fi
+
+  mv "$source" "$destination"
+done < <(find "$DOWNLOAD_DIR" -type f ! -name '*.zip' -print0)
+
+rm -rf "$DOWNLOAD_DIR"
+
+shopt -s nullglob
+for checksum_file in "$OUT_DIR"/*-SHA256SUMS "$OUT_DIR"/SHA256SUMS; do
+  [[ -f "$checksum_file" ]] || continue
+  echo "Verifying: $(basename "$checksum_file")"
+  (
+    cd "$OUT_DIR"
+    sha256sum --check "$(basename "$checksum_file")"
+  )
+done
+shopt -u nullglob
 
 echo "Done. Files in $OUT_DIR:"
-ls -1 "$OUT_DIR"
+find "$OUT_DIR" -maxdepth 1 -type f -printf '%f\n' | sort
