@@ -11,6 +11,7 @@ import re
 import shlex
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 
 from book_tools_common import load_env
@@ -196,8 +197,14 @@ def verify_pdf(root: Path, cfg: dict[str, str], context_path: Path) -> None:
     if p.returncode:
         raise SystemExit(p.stderr.strip() or "pdftotext failed")
     text = p.stdout
+
+    def canonical(value: str) -> str:
+        normalized = unicodedata.normalize("NFKD", value).casefold()
+        return "".join(char for char in normalized if char.isalnum())
+
+    canonical_text = canonical(text)
     expected = [ctx["publication"]["editionLabel"], ctx["publication"]["revision"], ctx["publication"]["publicationId"]]
-    missing = [item for item in expected if item and item not in text]
+    missing = [item for item in expected if item and canonical(item) not in canonical_text]
     if ctx["publication"]["kind"] == "release" and "DRAFT" in text:
         missing.append("absence of DRAFT marker")
     if missing:

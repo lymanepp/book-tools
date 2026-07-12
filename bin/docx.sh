@@ -52,64 +52,19 @@
 
 set -euo pipefail
 
-ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-cd "$ROOT"
-
-BOOK="${1:-}"
-
-if [[ -z "$BOOK" ]]; then
-    echo "Usage: $0 <book-dir>" >&2
-    exit 1
-fi
-
-BOOK_NAME="${BOOK#./}"
-BOOK_DIR="$ROOT/$BOOK_NAME"
-BIN_DIR="$ROOT/tools/bin"
-DIST_DIR="$ROOT/dist"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=book-build-common.sh
+source "$SCRIPT_DIR/book-build-common.sh"
+book_build_init "${1:-}"
 
 TEMPLATE_BUILDER="$BIN_DIR/build-template.py"
 TEMPLATE="$BIN_DIR/reference-template.docx"
 MDFORMAT="$BIN_DIR/mdformat.lua"
-BOOK_ENV="$BOOK_DIR/book.env"
-
-# ── Validate inputs ───────────────────────────────────────────────────────────
-
-[[ -d "$BOOK_DIR" ]] || { echo "ERROR: Missing book dir: $BOOK_DIR" >&2; exit 1; }
-
-if [[ ! -f "$BOOK_ENV" ]]; then
-    echo "ERROR: Missing $BOOK_ENV." >&2
-    exit 1
-fi
-
-# shellcheck disable=SC1090
-source "$BOOK_ENV"
-
-for var in BOOK_TITLE BOOK_SUBTITLE BOOK_OUTPUT_BASENAME BOOK_AUTHOR BOOK_COPYRIGHT_YEAR; do
-    if [[ -z "${!var:-}" ]]; then
-        echo "ERROR: $BOOK_ENV must define $var." >&2
-        exit 1
-    fi
-done
-
-for required in "$TEMPLATE_BUILDER" "$MDFORMAT"; do
-    if [[ ! -f "$required" ]]; then
-        echo "ERROR: Missing required file: $required" >&2
-        exit 1
-    fi
-done
-
 FRONT_MATTER="$BOOK_DIR/front-matter-submission.md"
 METADATA="$BOOK_DIR/metadata-submission.yaml"
-
-for required in "$FRONT_MATTER" "$METADATA"; do
-    if [[ ! -f "$required" ]]; then
-        echo "ERROR: Missing required file: $required" >&2
-        exit 1
-    fi
-done
-
-mkdir -p "$DIST_DIR"
 OUTPUT="$DIST_DIR/${BOOK_OUTPUT_BASENAME}-submission.docx"
+
+require_files "$TEMPLATE_BUILDER" "$MDFORMAT" "$FRONT_MATTER" "$METADATA"
 
 # ── Build reference template ──────────────────────────────────────────────────
 # Rebuilt on every run so book.env typography changes are always reflected.
@@ -140,52 +95,15 @@ python3 "$TEMPLATE_BUILDER" "$TEMPLATE" "${TEMPLATE_ARGS[@]}"
 
 RENDERED_FRONT_MATTER="$(mktemp --suffix=.md)"
 trap 'rm -f "$RENDERED_FRONT_MATTER"' EXIT
-
-export FRONT_MATTER RENDERED_FRONT_MATTER
-export BOOK_TITLE BOOK_SUBTITLE BOOK_OUTPUT_BASENAME
-export BOOK_AUTHOR
-export BOOK_HARDCOVER_ISBN="${BOOK_HARDCOVER_ISBN:-}"
-export BOOK_PAPERBACK_ISBN="${BOOK_PAPERBACK_ISBN:-}"
-export BOOK_COPYRIGHT_YEAR
-
-python3 - <<'PY'
-from pathlib import Path
-import os
-
-src = Path(os.environ["FRONT_MATTER"])
-dst = Path(os.environ["RENDERED_FRONT_MATTER"])
-
-replacements = {
-    "{{BOOK_TITLE}}": os.environ["BOOK_TITLE"],
-    "{{BOOK_SUBTITLE}}": os.environ["BOOK_SUBTITLE"],
-    "{{BOOK_OUTPUT_BASENAME}}": os.environ["BOOK_OUTPUT_BASENAME"],
-    "{{BOOK_AUTHOR}}": os.environ["BOOK_AUTHOR"],
-    "{{BOOK_COPYRIGHT_YEAR}}": os.environ["BOOK_COPYRIGHT_YEAR"],
-    "{{BOOK_HARDCOVER_ISBN}}": os.environ["BOOK_HARDCOVER_ISBN"],
-    "{{BOOK_PAPERBACK_ISBN}}": os.environ["BOOK_PAPERBACK_ISBN"],
-}
-
-text = src.read_text(encoding="utf-8")
-for marker, value in replacements.items():
-    text = text.replace(marker, value)
-dst.write_text(text, encoding="utf-8")
-PY
+render_front_matter "$FRONT_MATTER" "$RENDERED_FRONT_MATTER"
 
 # ── Collect chapter inputs ────────────────────────────────────────────────────
 
-INPUTS=("$RENDERED_FRONT_MATTER")
-while IFS= read -r md; do
-    INPUTS+=("$BOOK_DIR/$md")
-done < <(find "$BOOK_DIR" -maxdepth 1 -type f -name '[0-9][0-9]-*.md' -printf '%f\n' | sort)
-
-if [[ ${#INPUTS[@]} -le 1 ]]; then
-    echo "ERROR: No chapter files found in $BOOK_DIR (expected NN-*.md)." >&2
-    exit 1
-fi
+collect_markdown_inputs "$RENDERED_FRONT_MATTER" INPUTS
 
 echo "Building: ${BOOK_TITLE}"
 echo "Output:   ${OUTPUT}"
-echo "Inputs:   $((${#INPUTS[@]})) files"
+echo "Inputs:   ${#INPUTS[@]} files"
 printf '  - %s\n' "${INPUTS[@]}"
 
 # ── Pandoc ────────────────────────────────────────────────────────────────────

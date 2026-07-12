@@ -84,6 +84,8 @@ from pathlib import Path
 from elevenlabs import VoiceSettings
 from elevenlabs.client import ElevenLabs
 
+from audiobook_text import discover_chapters, strip_markdown
+
 # ---------------------------------------------------------------------------
 # Configuration — Generation
 # ---------------------------------------------------------------------------
@@ -145,129 +147,8 @@ HEAD_SILENCE_MS       =   500   # 0.5 s — ACX minimum is 0.5 s
 TAIL_SILENCE_MS       =  1000   # 1.0 s — ACX minimum is 1.0 s
 
 # ---------------------------------------------------------------------------
-# Markdown → plain text
+# File layout
 # ---------------------------------------------------------------------------
-
-ROMAN = [
-    "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight",
-    "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen",
-    "Sixteen", "Seventeen", "Eighteen", "Nineteen", "Twenty",
-    "Twenty-One", "Twenty-Two", "Twenty-Three", "Twenty-Four", "Twenty-Five",
-    "Twenty-Six", "Twenty-Seven", "Twenty-Eight", "Twenty-Nine", "Thirty",
-]
-
-
-def chapter_number_to_words(n: int) -> str:
-    if 1 <= n <= len(ROMAN) - 1:
-        return ROMAN[n]
-    return str(n)
-
-
-def heading_to_spoken(line: str) -> str:
-    m = re.match(r'^(#{1,6})\s+(.*)', line)
-    if not m:
-        return line.strip()
-    text = m.group(2).strip()
-    if len(m.group(1)) == 1:
-        num_m = re.match(r'^(\d+)\.\s+(.*)', text)
-        if num_m:
-            num   = int(num_m.group(1))
-            title = num_m.group(2).strip().replace('—', '. ')
-            return f"Chapter {chapter_number_to_words(num)}. {title}."
-        return f"{text.replace('—', '. ')}."
-    text = text.replace('—', '. ')
-    return text if text.endswith('.') else text + '.'
-
-
-def strip_markdown(text: str) -> str:
-    """Convert markdown source to clean spoken prose."""
-    lines = text.splitlines()
-    out   = []
-    for line in lines:
-        if re.match(r'^:::\s*(?:\{[^}]*\}|[A-Za-z0-9_-]+)?\s*$', line):
-            continue
-        if re.match(r'^\[\^[^\]]+\]:', line):
-            continue
-        if re.match(r'^[-*_]{3,}\s*$', line):
-            out.append('')
-            continue
-        if re.match(r'^#{1,6}\s', line):
-            out.extend(['', heading_to_spoken(line), ''])
-            continue
-        # PDF-only epigraph line-break markers are source comments for
-        # the print renderer. They should never be spoken or counted.
-        line = re.sub(r'<!--\s*pdf-?br\s*-->', '',    line)
-        line = re.sub(r'^>\s?',              '',    line)
-        line = re.sub(r'\[\^[^\]]+\]',       '',    line)
-        line = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', line)
-        line = re.sub(r'https?://\S+',        '',    line)
-        line = re.sub(r'\*\*([^*]+)\*\*',    r'\1', line)
-        line = re.sub(r'\*([^*\s][^*]*[^*\s])\*', r'\1', line)
-        line = re.sub(r'\*([^*\s])\*',       r'\1', line)
-        line = re.sub(r'^—\s*', '', line)
-        line = line.replace('—', ', ')
-        out.append(line)
-    return re.sub(r'\n{3,}', '\n\n', '\n'.join(out)).strip()
-
-
-# ---------------------------------------------------------------------------
-# Chunking
-# ---------------------------------------------------------------------------
-
-def split_into_chunks(text: str, max_chars: int) -> list[str]:
-    """Split text into chunks ≤ max_chars, breaking only at sentence boundaries."""
-    SENTENCE_END = re.compile(r'(?<=[.!?])\s+')
-    chunks, current, cur_len = [], [], 0
-
-    def flush():
-        if current:
-            chunks.append('\n\n'.join(current).strip())
-            current.clear()
-
-    for para in re.split(r'\n\n+', text):
-        para = para.strip()
-        if not para:
-            continue
-        if cur_len + len(para) + 2 <= max_chars:
-            current.append(para)
-            cur_len += len(para) + 2
-        else:
-            flush()
-            cur_len = 0
-            if len(para) <= max_chars:
-                current.append(para)
-                cur_len = len(para) + 2
-            else:
-                buf, buf_len = [], 0
-                for sent in SENTENCE_END.split(para):
-                    sent = sent.strip()
-                    if not sent:
-                        continue
-                    if buf_len + len(sent) + 1 <= max_chars:
-                        buf.append(sent)
-                        buf_len += len(sent) + 1
-                    else:
-                        if buf:
-                            chunks.append(' '.join(buf))
-                        buf, buf_len = [sent], len(sent) + 1
-                if buf:
-                    chunks.append(' '.join(buf))
-
-    flush()
-    return [c for c in chunks if c.strip()]
-
-
-# ---------------------------------------------------------------------------
-# File discovery
-# ---------------------------------------------------------------------------
-
-def discover_chapters(book_dir: Path) -> list[tuple[str, Path]]:
-    exclude = {'front-matter-print', 'front-matter-submission', 'metadata-submission'}
-    return [
-        (f.stem, f) for f in sorted(book_dir.glob('*.md'))
-        if not any(f.stem == ex or f.stem.startswith(ex) for ex in exclude)
-    ]
-
 
 def raw_dir(output_dir: Path, slug: str) -> Path:
     """Directory where raw chunk files for a chapter are stored."""

@@ -19,89 +19,11 @@ USAGE
   python count-chars.py book1/ --verbose
 """
 
-import re
 import sys
 import argparse
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# Markdown stripping — must match build-audiobook-elevenlabs.py exactly
-# ---------------------------------------------------------------------------
-
-ROMAN = [
-    "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight",
-    "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen",
-    "Sixteen", "Seventeen", "Eighteen", "Nineteen", "Twenty",
-    "Twenty-One", "Twenty-Two", "Twenty-Three", "Twenty-Four", "Twenty-Five",
-    "Twenty-Six", "Twenty-Seven", "Twenty-Eight", "Twenty-Nine", "Thirty",
-]
-
-
-def chapter_number_to_words(n: int) -> str:
-    if 1 <= n <= len(ROMAN) - 1:
-        return ROMAN[n]
-    return str(n)
-
-
-def heading_to_spoken(line: str) -> str:
-    m = re.match(r'^(#{1,6})\s+(.*)', line)
-    if not m:
-        return line.strip()
-    text = m.group(2).strip()
-    if len(m.group(1)) == 1:
-        num_m = re.match(r'^(\d+)\.\s+(.*)', text)
-        if num_m:
-            num   = int(num_m.group(1))
-            title = num_m.group(2).strip().replace('—', '. ')
-            return f"Chapter {chapter_number_to_words(num)}. {title}."
-        return f"{text.replace('—', '. ')}."
-    text = text.replace('—', '. ')
-    return text if text.endswith('.') else text + '.'
-
-
-def strip_markdown(text: str) -> str:
-    lines = text.splitlines()
-    out   = []
-    for line in lines:
-        if re.match(r'^:::\s*(?:\{[^}]*\}|[A-Za-z0-9_-]+)?\s*$', line):
-            continue
-        if re.match(r'^\[\^[^\]]+\]:', line):
-            continue
-        if re.match(r'^[-*_]{3,}\s*$', line):
-            out.append('')
-            continue
-        if re.match(r'^#{1,6}\s', line):
-            out.extend(['', heading_to_spoken(line), ''])
-            continue
-        # PDF-only epigraph line-break markers are source comments for
-        # the print renderer. They should never be spoken or counted.
-        line = re.sub(r'<!--\s*pdf-?br\s*-->',     '',    line)
-        line = re.sub(r'^>\s?',                    '',    line)
-        line = re.sub(r'\[\^[^\]]+\]',             '',    line)
-        line = re.sub(r'\[([^\]]+)\]\([^)]+\)',    r'\1', line)
-        line = re.sub(r'https?://\S+',             '',    line)
-        line = re.sub(r'\*\*([^*]+)\*\*',          r'\1', line)
-        line = re.sub(r'\*([^*\s][^*]*[^*\s])\*', r'\1', line)
-        line = re.sub(r'\*([^*\s])\*',             r'\1', line)
-        line = re.sub(r'^—\s*', '', line)
-        line = line.replace('—', ', ')
-        out.append(line)
-    return re.sub(r'\n{3,}', '\n\n', '\n'.join(out)).strip()
-
-
-# ---------------------------------------------------------------------------
-# File discovery
-# ---------------------------------------------------------------------------
-
-EXCLUDE = {'front-matter-print', 'front-matter-submission', 'metadata-submission'}
-
-
-def discover_chapters(book_dir: Path) -> list[tuple[str, Path]]:
-    return [
-        (f.stem, f) for f in sorted(book_dir.glob('*.md'))
-        if not any(f.stem == ex or f.stem.startswith(ex) for ex in EXCLUDE)
-    ]
-
+from audiobook_text import discover_chapters, strip_markdown
 
 # ---------------------------------------------------------------------------
 # Pricing reference
@@ -152,8 +74,8 @@ def parse_args():
     p = argparse.ArgumentParser(
         description='Count post-stripped characters for ElevenLabs credit estimation',
     )
-    p.add_argument('book_dirs', nargs='+', metavar='DIR',
-                   help='One or more book directories containing chapter .md files')
+    p.add_argument('book_dirs', nargs='*', metavar='DIR', default=['book1', 'book2'],
+                   help='Book directories containing chapter .md files (default: book1 book2)')
     p.add_argument('--verbose', '-v', action='store_true',
                    help='Show per-chapter character counts')
     return p.parse_args()

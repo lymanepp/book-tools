@@ -40,26 +40,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-from book_tools_common import load_env
+from book_tools_common import load_env, repo_root, resolve_under
 
 
 # ── paths ────────────────────────────────────────────────────────────────────
 
-def _find_repo_root() -> Path:
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return Path(result.stdout.strip()).resolve()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        # python3 tools/bin/booklet.py -> repo root is two parents up.
-        return Path(__file__).resolve().parents[2]
-
-
-ROOT = _find_repo_root()
+ROOT = repo_root()
 BOOKLETS_DIR = ROOT / "booklets"
 BIN_DIR = Path(__file__).resolve().parent
 PDF_SH = BIN_DIR / "pdf.sh"
@@ -93,13 +79,6 @@ def validate_config(cfg: dict[str, str], env_path: Path) -> None:
         sys.exit(1)
 
 
-def resolve_under_root(value: str) -> Path:
-    path = Path(value).expanduser()
-    if not path.is_absolute():
-        path = ROOT / path
-    return path.resolve()
-
-
 def parse_source_books(value: str, env_path: Path) -> dict[int, Path]:
     """Parse BOOKLET_SOURCE_BOOKS='1:book1 2:book2'."""
     source_books: dict[int, Path] = {}
@@ -120,7 +99,7 @@ def parse_source_books(value: str, env_path: Path) -> dict[int, Path]:
         if number < 1:
             print(f"ERROR: Source-book numbers must be positive in {env_path}: {number}", file=sys.stderr)
             sys.exit(1)
-        source_dir = resolve_under_root(dir_raw)
+        source_dir = resolve_under(ROOT, dir_raw)
         if not source_dir.is_dir():
             print(f"ERROR: Source-book directory not found for {number}: {source_dir}", file=sys.stderr)
             sys.exit(1)
@@ -547,6 +526,15 @@ def main() -> None:
             encoding="utf-8",
         )
 
+        source_build_dir = ROOT / "build" / booklet_dir.relative_to(ROOT)
+        temp_build_dir = ROOT / "build" / fake_book.name
+        publication_info = source_build_dir / "publication-info.typ"
+        if not publication_info.is_file():
+            print(f"ERROR: Missing publication metadata: {publication_info}", file=sys.stderr)
+            sys.exit(1)
+        temp_build_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(publication_info, temp_build_dir / publication_info.name)
+
         print(f"\nBuilding: {title}")
         result = subprocess.run(
             ["bash", str(PDF_SH), "_booklet_tmp"],
@@ -556,6 +544,7 @@ def main() -> None:
 
     finally:
         shutil.rmtree(fake_book, ignore_errors=True)
+        shutil.rmtree(ROOT / "build" / fake_book.name, ignore_errors=True)
 
     if result.returncode != 0:
         print(f"\nERROR: pdf.sh exited with code {result.returncode}", file=sys.stderr)

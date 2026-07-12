@@ -1,56 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-cd "$ROOT"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=book-build-common.sh
+source "$SCRIPT_DIR/book-build-common.sh"
+book_build_init "${1:-}"
 
-BOOK="${1:-}"
 MODE="print"
-
-if [[ -z "$BOOK" ]]; then
-  echo "Usage: $0 <book-dir>" >&2
-  exit 1
-fi
-
-BOOK_NAME="${BOOK#./}"
-BOOK_DIR="$ROOT/$BOOK_NAME"
-BIN_DIR="$ROOT/tools/bin"
 BUILD_DIR="$ROOT/build/$BOOK_NAME"
-DIST_DIR="$ROOT/dist"
-
 LUA_FILTER="$BIN_DIR/typst-markup.lua"
 BOOK_TYP_SRC="$BIN_DIR/book.typ"
-
-[[ -d "$BOOK_DIR" ]] || { echo "Missing book dir: $BOOK_DIR" >&2; exit 1; }
-[[ -f "$LUA_FILTER" ]] || { echo "Missing Lua filter: $LUA_FILTER" >&2; exit 1; }
-[[ -f "$BOOK_TYP_SRC" ]] || { echo "Missing Typst template: $BOOK_TYP_SRC" >&2; exit 1; }
-
-mkdir -p "$BUILD_DIR" "$DIST_DIR"
-
 COMBINED_MD="$BUILD_DIR/$BOOK_NAME.combined.md"
 BODY_TYP="$BUILD_DIR/$BOOK_NAME.body.typ"
 GENERATED_TYP="$BUILD_DIR/$BOOK_NAME.typ"
-BOOK_ENV="$BOOK_DIR/book.env"
-
-if [[ ! -f "$BOOK_ENV" ]]; then
-  echo "ERROR: Missing $BOOK_ENV." >&2
-  exit 1
-fi
-
-# shellcheck disable=SC1090
-source "$BOOK_ENV"
-
-for var in BOOK_TITLE BOOK_SUBTITLE BOOK_OUTPUT_BASENAME BOOK_AUTHOR BOOK_COPYRIGHT_YEAR; do
-  if [[ -z "${!var:-}" ]]; then
-    echo "ERROR: $BOOK_ENV must define $var." >&2
-    exit 1
-  fi
-done
-
-: "${BOOK_HARDCOVER_ISBN:=}"
-: "${BOOK_PAPERBACK_ISBN:=}"
-
 OUTPUT_PDF="$DIST_DIR/${BOOK_OUTPUT_BASENAME}-$MODE.pdf"
+
+require_files "$LUA_FILTER" "$BOOK_TYP_SRC"
+mkdir -p "$BUILD_DIR"
 
 # Escape strings for Typst string literals.
 typst_escape() {
