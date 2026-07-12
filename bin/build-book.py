@@ -310,7 +310,6 @@ def main() -> None:
         run(["bash", "tools/bin/epub.sh", rel(root, book_dir)], root, args.dry_run)
 
     if not args.no_finalize and any(products.values()):
-        run(["python3", "tools/bin/publication.py", "verify", rel(root, book_dir)], root, args.dry_run)
         run(["python3", "tools/bin/publication.py", "finalize", rel(root, book_dir)], root, args.dry_run)
 
     print("\nExpected artifacts:")

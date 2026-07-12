@@ -120,7 +120,7 @@ def write_book_env(path: Path, cfg: dict[str, str]) -> None:
     """Write only BOOK_* fields to the temporary book.env consumed by pdf.sh."""
     lines = []
     for key in sorted(k for k in cfg if k.startswith("BOOK_")):
-        lines.append(f"{key}={shell_quote(str(cfg[key]))}")
+        lines.append(f"{key}={shlex.quote(str(cfg[key]))}")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

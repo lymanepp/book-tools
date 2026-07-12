@@ -234,6 +234,7 @@ def main() -> None:
         write_typst(build_dir / "publication-info.typ", ctx)
         print(json.dumps(ctx["publication"], indent=2))
     elif args.command == "finalize":
+        verify_pdf(root, cfg, context_path)
         manifest, sums = finalize(root, target, cfg, context_path)
         print(manifest)
         print(sums)

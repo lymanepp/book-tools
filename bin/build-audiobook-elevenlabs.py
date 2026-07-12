@@ -81,8 +81,6 @@ import argparse
 import textwrap
 from pathlib import Path
 
-from elevenlabs import VoiceSettings
-from elevenlabs.client import ElevenLabs
 
 from audiobook_text import discover_chapters, strip_markdown
 
@@ -190,6 +188,10 @@ def estimate_credits(chapters: list[tuple[str, Path]], model: str) -> tuple:
 # ---------------------------------------------------------------------------
 
 def get_client(api_key: str):
+    try:
+        from elevenlabs.client import ElevenLabs
+    except ImportError as exc:
+        raise SystemExit("elevenlabs is required for generation. Install it with: pip install elevenlabs") from exc
     return ElevenLabs(api_key=api_key)
 
 
@@ -203,6 +205,11 @@ def list_voices(client) -> None:
 
 def api_narrate_chunk(client, text: str, voice_id: str, model: str,
                       el_format: str) -> bytes:
+    try:
+        from elevenlabs import VoiceSettings
+    except ImportError as exc:
+        raise SystemExit("elevenlabs is required for generation. Install it with: pip install elevenlabs") from exc
+
     audio_iter = client.text_to_speech.convert(
         text=text,
         voice_id=voice_id,

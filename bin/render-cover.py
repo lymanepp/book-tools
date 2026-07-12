@@ -86,7 +86,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from book_tools_common import load_env
+from book_tools_common import load_env, repo_root, resolve_under
 
 from kdp_cover_geometry import (
     CSS_DPI,
@@ -167,28 +167,6 @@ class SpineTextConfig:
     @property
     def status(self) -> str:
         return "shown" if self.show else "hidden"
-
-
-def git_workspace_root() -> Path:
-    """Return the Git workspace root for the current invocation."""
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=Path.cwd(),
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return Path(result.stdout.strip()).resolve()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return Path.cwd().resolve()
-
-
-def resolve_under_workspace(path: str | Path, workspace: Path) -> Path:
-    p = Path(path).expanduser()
-    if not p.is_absolute():
-        p = workspace / p
-    return p.resolve()
 
 
 
@@ -358,7 +336,7 @@ def resolve_spine_text_config(target: CoverTarget, pages: int, geometry: dict) -
 
 
 def load_cover_target(book_arg: str | Path, workspace: Path) -> CoverTarget:
-    book_dir = resolve_under_workspace(book_arg, workspace)
+    book_dir = resolve_under(workspace, book_arg)
     env_path = book_dir / "book.env"
     if not book_dir.is_dir():
         sys.exit(f"Book directory not found: {book_dir}")
@@ -745,7 +723,7 @@ def default_interior_pdf(target: CoverTarget, workspace: Path) -> Path:
 
 def resolve_interior_pdf(target: CoverTarget, args: argparse.Namespace, workspace: Path) -> Path:
     """Resolve the interior PDF whose real page count drives cover geometry."""
-    pdf = resolve_under_workspace(args.pdf, workspace) if args.pdf else default_interior_pdf(target, workspace)
+    pdf = resolve_under(workspace, args.pdf) if args.pdf else default_interior_pdf(target, workspace)
     if not pdf.is_file():
         expected = default_interior_pdf(target, workspace)
         raise SystemExit(
@@ -876,7 +854,7 @@ def main() -> None:
     if args.all and args.pdf:
         ap.error("--pdf can only be used with one book_dir; page counts differ by book")
 
-    workspace = git_workspace_root()
+    workspace = repo_root()
     targets = discover_cover_targets(workspace) if args.all else [load_cover_target(args.book_dir, workspace)]
     if not targets:
         sys.exit("No cover targets found. A target must contain book.env and cover.html.")
