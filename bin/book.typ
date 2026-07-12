@@ -101,6 +101,7 @@
   year: none,
   publication: none,
   source_note: none,
+  scripture_notice: none,
   isbn_block: none,
 ) = {
   set text(font: _body-font, size: 10pt)
@@ -116,7 +117,7 @@
   v(1.0in)
 
   _b-strong(title)
-  v(2pt)
+  linebreak()
   _b-emph(subtitle)
 
   v(22pt)
@@ -147,8 +148,10 @@
     [Printed in the United States of America.]
   }
 
-  v(20pt)
-  [Scripture quotations are from the ESV® Bible (The Holy Bible, English Standard Version®), copyright © 2001 by Crossway, a publishing ministry of Good News Publishers. Used by permission. All rights reserved.]
+  if scripture_notice != none {
+    v(20pt)
+    scripture_notice
+  }
 }
 
 #let setup(doc, title: "") = {

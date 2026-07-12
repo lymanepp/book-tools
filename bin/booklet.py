@@ -380,7 +380,8 @@ def make_front_matter(title: str, subtitle: str, author: str, year: str,
   author: [{esc(author)}],
   year: "{esc(year)}",
   publication: publication,
-  source_note: [This booklet is excerpted from #emph[{esc(source_title)}] by {esc(author)}.],{isbn_arg}
+  source_note: [This booklet is excerpted from #emph[{esc(source_title)}] by {esc(author)}.],
+  scripture_notice: [Scripture quotations are from the ESV\u{{00AE}} Bible (The Holy Bible, English Standard Version\u{{00AE}}), copyright \u{{00A9}} 2001 by Crossway, a publishing ministry of Good News Publishers. Used by permission. All rights reserved.],{isbn_arg}
 )
 
 // ── Page 4: Blank verso ──────────────────────────────────────────────────────
