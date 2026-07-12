@@ -71,37 +71,11 @@ def command_output(args: list[str]) -> str:
         return f"ERROR: {exc}"
 
 
-def fc_match(font_name: str) -> str | None:
+def fc_match(font_name: str, style: str | None = None) -> str | None:
     if not command_exists("fc-match"):
         return None
 
-    result = subprocess.run(
-        ["fc-match", font_name],
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-    )
-    if result.returncode != 0:
-        return None
-
-    output = result.stdout.strip()
-    if not output:
-        return None
-
-    # Avoid false positives where fontconfig silently falls back to DejaVu,
-    # Liberation, or another generic serif font.
-    if font_name.lower() not in output.lower():
-        return None
-
-    return output
-
-
-def fc_match_style(font_name: str, style: str) -> str | None:
-    if not command_exists("fc-match"):
-        return None
-
-    pattern = f"{font_name}:style={style}"
+    pattern = f"{font_name}:style={style}" if style else font_name
     result = subprocess.run(
         ["fc-match", pattern],
         check=False,
@@ -109,18 +83,8 @@ def fc_match_style(font_name: str, style: str) -> str | None:
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
     )
-    if result.returncode != 0:
-        return None
-
-    output = result.stdout.strip()
-    if not output:
-        return None
-
-    # Same fallback guard as fc_match.
-    if font_name.lower() not in output.lower():
-        return None
-
-    return output
+    output = result.stdout.strip() if result.returncode == 0 else ""
+    return output if output and font_name.lower() in output.lower() else None
 
 
 def main() -> int:
@@ -146,11 +110,11 @@ def main() -> int:
     if not eb_match:
         errors.append("missing fontconfig match: EB Garamond")
 
-    eb_italic_match = fc_match_style("EB Garamond", "Italic")
+    eb_italic_match = fc_match("EB Garamond", "Italic")
     if not eb_italic_match:
         errors.append("missing fontconfig match: EB Garamond Italic")
 
-    eb_bold_match = fc_match_style("EB Garamond", "Bold")
+    eb_bold_match = fc_match("EB Garamond", "Bold")
     if not eb_bold_match:
         errors.append("missing fontconfig match: EB Garamond Bold")
 

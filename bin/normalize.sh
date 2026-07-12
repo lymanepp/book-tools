@@ -1,44 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-INPLACE=0
-
+in_place=false
 if [[ "${1:-}" == "-i" ]]; then
-  INPLACE=1
+  in_place=true
   shift
 fi
 
-SED_SCRIPT=$(cat <<'EOF'
-s/[“”„‟]/"/g
-s/[‘’‚‛]/'/g
-s/\([0-9]\)-\([0-9]\)/\1–\2/g
-s/\([0-9]\)—\([0-9]\)/\1–\2/g
-s/ — /—/g
-s/\.\.\./…/g
-s/ / /g
-s/[​‌‍]//g
-s/′/'/g
-s/″/"/g
-EOF
+sed_args=(
+  -e 's/[“”„‟]/"/g'
+  -e "s/[‘’‚‛]/'/g"
+  -e 's/\([0-9]\)-\([0-9]\)/\1–\2/g'
+  -e 's/\([0-9]\)—\([0-9]\)/\1–\2/g'
+  -e 's/ — /—/g'
+  -e 's/\.\.\./…/g'
+  -e 's/ / /g'
+  -e 's/[​‌‍]//g'
+  -e "s/′/'/g"
+  -e 's/″/"/g'
 )
 
-run_sed() {
-  sed -e "$SED_SCRIPT" "$@"
-}
-
-if [[ $# -eq 0 ]]; then
-  if [[ $INPLACE -eq 1 ]]; then
-    echo "Error: -i cannot be used with stdin" >&2
-    exit 1
-  fi
-  run_sed
-  exit 0
-fi
-
-if [[ $INPLACE -eq 1 ]]; then
-  for f in "$@"; do
-    sed -i -e "$SED_SCRIPT" "$f"
-  done
+if $in_place; then
+  (($#)) || { echo 'ERROR: -i cannot be used with stdin.' >&2; exit 2; }
+  sed -i "${sed_args[@]}" "$@"
 else
-  run_sed "$@"
+  sed "${sed_args[@]}" "$@"
 fi

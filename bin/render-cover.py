@@ -86,6 +86,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from book_tools_common import load_env
+
 from kdp_cover_geometry import (
     CSS_DPI,
     SUPPORTED_INTERIOR_TYPES,
@@ -188,30 +190,6 @@ def resolve_under_workspace(path: str | Path, workspace: Path) -> Path:
         p = workspace / p
     return p.resolve()
 
-
-def load_env(path: Path) -> dict[str, str]:
-    """Parse the simple shell-style KEY=value book.env files used by this repo."""
-    env: dict[str, str] = {}
-    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if stripped.startswith("export "):
-            stripped = stripped[len("export "):].lstrip()
-        if "=" not in stripped:
-            continue
-        key, _, raw = stripped.partition("=")
-        key = key.strip()
-        raw = raw.strip()
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
-            sys.exit(f"Invalid env key in {path}:{lineno}: {key}")
-        try:
-            parts = shlex.split(raw, comments=False, posix=True)
-            value = parts[0] if parts else ""
-        except ValueError as e:
-            sys.exit(f"Could not parse {path}:{lineno}: {e}")
-        env[key] = value
-    return env
 
 
 def optional_int(value: str | None, name: str, env_path: Path) -> int | None:

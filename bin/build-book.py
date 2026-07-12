@@ -48,11 +48,12 @@ from __future__ import annotations
 
 import argparse
 import os
-import re
 import shlex
 import subprocess
 import sys
 from pathlib import Path
+
+from book_tools_common import load_env, repo_root, resolve_under
 
 
 TRUE_VALUES = {"1", "true", "yes", "y", "on"}
@@ -60,49 +61,7 @@ FALSE_VALUES = {"0", "false", "no", "n", "off"}
 VALID_BINDINGS = {"paperback", "hardcover"}
 
 
-def find_repo_root() -> Path:
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=Path.cwd(),
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return Path(result.stdout.strip()).resolve()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return Path(__file__).resolve().parents[2]
 
-
-def load_env(path: Path) -> dict[str, str]:
-    env: dict[str, str] = {}
-    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if stripped.startswith("export "):
-            stripped = stripped[len("export "):].lstrip()
-        if "=" not in stripped:
-            continue
-        key, _, raw = stripped.partition("=")
-        key = key.strip()
-        raw = raw.strip()
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
-            raise SystemExit(f"ERROR: Invalid env key in {path}:{lineno}: {key}")
-        try:
-            parts = shlex.split(raw, comments=False, posix=True)
-            value = parts[0] if parts else ""
-        except ValueError as e:
-            raise SystemExit(f"ERROR: Could not parse {path}:{lineno}: {e}") from e
-        env[key] = value
-    return env
-
-
-def resolve_under_root(root: Path, value: str | Path) -> Path:
-    path = Path(value).expanduser()
-    if not path.is_absolute():
-        path = root / path
-    return path.resolve()
 
 
 def rel(root: Path, path: Path) -> str:
@@ -277,8 +236,8 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="Print commands without running them.")
     args = parser.parse_args()
 
-    root = find_repo_root()
-    book_dir = resolve_under_root(root, args.book_dir)
+    root = repo_root()
+    book_dir = resolve_under(root, args.book_dir)
     env_path = book_dir / "book.env"
 
     if not book_dir.is_dir():

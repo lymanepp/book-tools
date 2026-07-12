@@ -13,6 +13,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from book_tools_common import load_env
+
 SEMVER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 TAG_RE = re.compile(r"^(?P<slug>[a-z0-9][a-z0-9-]*)-v(?P<version>\d+\.\d+\.\d+)$")
 
@@ -23,26 +25,6 @@ def run_git(root: Path, *args: str, check: bool = True) -> str:
         raise SystemExit((p.stderr or p.stdout).strip() or f"git {' '.join(args)} failed")
     return p.stdout.strip()
 
-
-def load_env(path: Path) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        s = line.strip()
-        if not s or s.startswith("#"):
-            continue
-        if s.startswith("export "):
-            s = s[7:].lstrip()
-        if "=" not in s:
-            continue
-        key, raw = (part.strip() for part in s.split("=", 1))
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
-            raise SystemExit(f"Invalid key in {path}:{n}: {key}")
-        try:
-            parts = shlex.split(raw, comments=False, posix=True)
-        except ValueError as exc:
-            raise SystemExit(f"Could not parse {path}:{n}: {exc}") from exc
-        out[key] = parts[0] if parts else ""
-    return out
 
 
 def typst_string(value: str) -> str:

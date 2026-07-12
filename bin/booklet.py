@@ -40,6 +40,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from book_tools_common import load_env
+
 
 # ── paths ────────────────────────────────────────────────────────────────────
 
@@ -82,31 +84,6 @@ DEFAULT_FIELDS = {
     "BOOKLET_INTRO": "",
 }
 
-
-def load_env(path: Path) -> dict[str, str]:
-    """Parse a shell-style key=value env file. Returns a dict of strings."""
-    env: dict[str, str] = {}
-    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if stripped.startswith("export "):
-            stripped = stripped[len("export "):].lstrip()
-        if "=" not in stripped:
-            continue
-        key, _, raw = stripped.partition("=")
-        key = key.strip()
-        raw = raw.strip()
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
-            print(f"ERROR: Invalid env key in {path}:{lineno}: {key}", file=sys.stderr)
-            sys.exit(1)
-        try:
-            value = shlex.split(raw, comments=False, posix=True)[0] if raw else ""
-        except ValueError as e:
-            print(f"ERROR: Could not parse {path}:{lineno}: {e}", file=sys.stderr)
-            sys.exit(1)
-        env[key] = value
-    return env
 
 
 def validate_config(cfg: dict[str, str], env_path: Path) -> None:
