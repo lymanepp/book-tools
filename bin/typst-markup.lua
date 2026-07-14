@@ -150,7 +150,7 @@ function Pandoc(doc)
   -- pdf-typst.sh writes the Typst preamble itself so it can inject
   -- generated book-level front matter before the chapter body. Keep the
   -- old standalone behavior for direct pandoc usage.
-  if os.getenv("WSS_SUPPRESS_TYPST_PREAMBLE") ~= "1" then
+  if os.getenv("SUPPRESS_TYPST_PREAMBLE") ~= "1" then
     table.insert(doc.blocks, 1, raw_block('#import "book.typ" as book\n#show: book.setup\n'))
   end
   return doc

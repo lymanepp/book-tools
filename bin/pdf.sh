@@ -71,7 +71,7 @@ perl -CSD -0pi -e 's/[\x{FEFF}\x{00AD}\x{FFFE}\x{FFFF}]//g' "$COMBINED_MD"
 cp "$BOOK_TYP_SRC" "$BUILD_DIR/book.typ"
 
 # Convert chapter/body Markdown only. Front matter is generated in Typst below.
-WSS_SUPPRESS_TYPST_PREAMBLE=1 pandoc \
+SUPPRESS_TYPST_PREAMBLE=1 pandoc \
   -f markdown+smart+footnotes+pipe_tables+raw_tex \
   -t typst \
   --wrap=none \
