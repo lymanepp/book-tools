@@ -35,6 +35,12 @@ book.env fields used by this renderer
   BOOK_COVER_SPINE_SERIES     Optional; defaults to BOOK_TITLE
   BOOK_COVER_SPINE_TITLE      Optional; defaults to BOOK_SUBTITLE or BOOK_TITLE
   BOOK_COVER_SPINE_AUTHOR     Optional; defaults to BOOK_AUTHOR
+  BOOK_COVER_SPINE_FONT_SCALE
+                              Optional overall spine-type multiplier; defaults to 1.0
+  BOOK_COVER_SPINE_TITLE_FONT_SCALE
+  BOOK_COVER_SPINE_SERIES_FONT_SCALE
+  BOOK_COVER_SPINE_AUTHOR_FONT_SCALE
+                              Optional per-element multipliers; each defaults to 1.0
 
   Spine font sizes are calculated from the actual spine width and text length.
   Wider books get larger, more readable spine type; narrow spines are clamped
@@ -246,9 +252,40 @@ def spine_font_layout(target: CoverTarget, spine_width_px: float, safe_margin_px
     strings = spine_env_strings(target)
 
     # Primary clamp: font height cannot exceed what the spine width can carry.
+    # These calculations are the shared default behavior. Per-book scale values
+    # are applied only when explicitly configured in book.env.
     title_font = clamp(spine_width_px * 0.30, SPINE_TITLE_FONT_MIN_PX, SPINE_TITLE_FONT_MAX_PX)
     series_font = clamp(title_font * 0.72, SPINE_SERIES_FONT_MIN_PX, SPINE_SERIES_FONT_MAX_PX)
     author_font = clamp(title_font * 0.64, SPINE_AUTHOR_FONT_MIN_PX, SPINE_AUTHOR_FONT_MAX_PX)
+
+    cfg = load_env(target.env_path)
+    overall_scale = optional_float(
+        cfg.get("BOOK_COVER_SPINE_FONT_SCALE"),
+        "BOOK_COVER_SPINE_FONT_SCALE",
+        target.env_path,
+    ) or 1.0
+    title_scale = overall_scale * (optional_float(
+        cfg.get("BOOK_COVER_SPINE_TITLE_FONT_SCALE"),
+        "BOOK_COVER_SPINE_TITLE_FONT_SCALE",
+        target.env_path,
+    ) or 1.0)
+    series_scale = overall_scale * (optional_float(
+        cfg.get("BOOK_COVER_SPINE_SERIES_FONT_SCALE"),
+        "BOOK_COVER_SPINE_SERIES_FONT_SCALE",
+        target.env_path,
+    ) or 1.0)
+    author_scale = overall_scale * (optional_float(
+        cfg.get("BOOK_COVER_SPINE_AUTHOR_FONT_SCALE"),
+        "BOOK_COVER_SPINE_AUTHOR_FONT_SCALE",
+        target.env_path,
+    ) or 1.0)
+
+    # Permit intentional enlargement while retaining a physical-width guardrail.
+    # max(base, ...) guarantees that an omitted/default 1.0 scale is byte-for-byte
+    # equivalent to the prior sizing behavior.
+    title_font = min(title_font * title_scale, max(title_font, spine_width_px * 0.42))
+    series_font = min(series_font * series_scale, max(series_font, spine_width_px * 0.30))
+    author_font = min(author_font * author_scale, max(author_font, spine_width_px * 0.28))
     rule_margin = clamp(title_font * 0.55, 4.0, 10.0)
 
     available_len = max(1.0, panel_height_px - (2 * safe_margin_px))
