@@ -1,5 +1,5 @@
 // book.typ — What Scripture Says book template
-// Target: 6×9 print PDF, Typst 0.14.x
+// Target: 6×9 print PDF, Typst
 // Contract: Pandoc/Lua emits semantic structure; this file owns layout.
 
 #let _b-emph     = emph
