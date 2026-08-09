@@ -43,9 +43,8 @@ REQUIRED_PYTHON_MODULES = [
 # Do not hard-code EB Garamond font file paths here.
 #
 # Debian and Ubuntu package the same font family under different directories,
-# extensions, and optical-size filenames. The build cares that the font family
-# resolves through fontconfig, because WeasyPrint resolves fonts that way when
-# cover templates use font-family names.
+# extensions, and optical-size filenames. Validate installed face metadata via
+# fontconfig rather than hard-coding paths or trusting fc-match fallbacks.
 REQUIRED_FILES: list[Path] = []
 
 
@@ -71,20 +70,64 @@ def command_output(args: list[str]) -> str:
         return f"ERROR: {exc}"
 
 
-def fc_match(font_name: str, style: str | None = None) -> str | None:
-    if not command_exists("fc-match"):
-        return None
+def normalize_font_name(value: str) -> str:
+    return " ".join(value.casefold().split())
 
-    pattern = f"{font_name}:style={style}" if style else font_name
+
+def installed_font_faces() -> list[tuple[str, str, str]]:
+    """Return installed font faces as (file, family, style) tuples."""
+    if not command_exists("fc-list"):
+        return []
+
     result = subprocess.run(
-        ["fc-match", pattern],
+        ["fc-list", "--format", "%{file}\t%{family}\t%{style}\n"],
         check=False,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
     )
-    output = result.stdout.strip() if result.returncode == 0 else ""
-    return output if output and font_name.lower() in output.lower() else None
+    if result.returncode != 0:
+        return []
+
+    faces: list[tuple[str, str, str]] = []
+    for line in result.stdout.splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) == 3:
+            faces.append((parts[0], parts[1], parts[2]))
+    return faces
+
+
+def find_font_face(
+    faces: list[tuple[str, str, str]],
+    family: str,
+    required_style: str,
+) -> str | None:
+    """Find an actually installed face matching family and style metadata."""
+    wanted_family = normalize_font_name(family)
+    wanted_style = normalize_font_name(required_style)
+
+    for file_name, families, styles in faces:
+        family_names = {
+            normalize_font_name(item)
+            for item in families.split(",")
+            if item.strip()
+        }
+        style_names = [
+            normalize_font_name(item)
+            for item in styles.split(",")
+            if item.strip()
+        ]
+
+        if wanted_family not in family_names:
+            continue
+        if not any(wanted_style in style for style in style_names):
+            continue
+
+        primary_family = families.split(",", 1)[0].strip()
+        primary_style = styles.split(",", 1)[0].strip()
+        return f'{Path(file_name).name}: "{primary_family}" "{primary_style}"'
+
+    return None
 
 
 def main() -> int:
@@ -102,21 +145,25 @@ def main() -> int:
         if not path.exists():
             errors.append(f"missing file: {path}")
 
-    tex_gyre_match = fc_match("TeX Gyre Pagella")
+    font_faces = installed_font_faces()
+    if not font_faces:
+        errors.append("missing command or usable output: fc-list")
+
+    tex_gyre_match = find_font_face(font_faces, "TeX Gyre Pagella", "Regular")
     if not tex_gyre_match:
-        errors.append("missing fontconfig match: TeX Gyre Pagella")
+        errors.append("missing installed font face: TeX Gyre Pagella Regular")
 
-    eb_match = fc_match("EB Garamond")
+    eb_match = find_font_face(font_faces, "EB Garamond", "Regular")
     if not eb_match:
-        errors.append("missing fontconfig match: EB Garamond")
+        errors.append("missing installed font face: EB Garamond Regular")
 
-    eb_italic_match = fc_match("EB Garamond", "Italic")
+    eb_italic_match = find_font_face(font_faces, "EB Garamond", "Italic")
     if not eb_italic_match:
-        errors.append("missing fontconfig match: EB Garamond Italic")
+        errors.append("missing installed font face: EB Garamond Italic")
 
-    eb_bold_match = fc_match("EB Garamond", "Bold")
+    eb_bold_match = find_font_face(font_faces, "EB Garamond", "Bold")
     if not eb_bold_match:
-        errors.append("missing fontconfig match: EB Garamond Bold")
+        errors.append("missing installed font face: EB Garamond Bold")
 
     typst_version = command_output(["typst", "--version"]) if command_exists("typst") else "missing"
     pandoc_version = (
