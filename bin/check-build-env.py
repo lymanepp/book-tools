@@ -71,7 +71,9 @@ def command_output(args: list[str]) -> str:
 
 
 def normalize_font_name(value: str) -> str:
-    return " ".join(value.casefold().split())
+    # Fontconfig may report the same family as either "TeX Gyre Pagella" or
+    # "TeXGyrePagella" depending on the installed face/package.
+    return "".join(ch for ch in value.casefold() if ch.isalnum())
 
 
 def installed_font_faces() -> list[tuple[str, str, str]]:

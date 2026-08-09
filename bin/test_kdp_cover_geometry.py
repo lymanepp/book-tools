@@ -148,8 +148,9 @@ class KdpCoverGeometryTests(unittest.TestCase):
         g = calculate_kdp_cover_geometry(
             binding="paperback", interior_type="black_and_white", paper="cream", page_count=211
         )
-        self.assert_close(g.spine_width_in, 0.5275, "paperback cream 211 spine")
-        self.assert_close(g.full_cover_width_in, 12.7775, "paperback cream 211 full width")
+        self.assertEqual(g.page_count, 212)
+        self.assert_close(g.spine_width_in, 0.5300, "paperback cream 211->212 spine")
+        self.assert_close(g.full_cover_width_in, 12.7800, "paperback cream 211->212 full width")
 
     def test_hardcover_spine_includes_case_laminate_allowance(self) -> None:
         white = calculate_kdp_cover_geometry(
@@ -161,12 +162,23 @@ class KdpCoverGeometryTests(unittest.TestCase):
         premium = calculate_kdp_cover_geometry(
             binding="hardcover", interior_type="premium_color", paper="white", page_count=211
         )
-        self.assert_close(white.spine_width_in, 0.664172, "hardcover B&W white 211 spine")
-        self.assert_close(white.full_cover_width_in, 14.239172, "hardcover B&W white 211 full width")
-        self.assert_close(cream.spine_width_in, 0.7165, "hardcover B&W cream 211 spine")
-        self.assert_close(cream.full_cover_width_in, 14.2915, "hardcover B&W cream 211 full width")
-        self.assert_close(premium.spine_width_in, 0.684217, "hardcover premium white 211 spine")
-        self.assert_close(premium.full_cover_width_in, 14.259217, "hardcover premium white 211 full width")
+        self.assert_close(white.spine_width_in, 0.666424, "hardcover B&W white 211->212 spine")
+        self.assert_close(white.full_cover_width_in, 14.241424, "hardcover B&W white 211->212 full width")
+        self.assert_close(cream.spine_width_in, 0.7190, "hardcover B&W cream 211->212 spine")
+        self.assert_close(cream.full_cover_width_in, 14.2940, "hardcover B&W cream 211->212 full width")
+        self.assert_close(premium.spine_width_in, 0.686564, "hardcover premium white 211->212 spine")
+        self.assert_close(premium.full_cover_width_in, 14.261564, "hardcover premium white 211->212 full width")
+
+    def test_odd_page_count_uses_next_even_kdp_count(self) -> None:
+        odd = calculate_kdp_cover_geometry(
+            binding="paperback", interior_type="black_and_white", paper="cream", page_count=299
+        )
+        even = calculate_kdp_cover_geometry(
+            binding="paperback", interior_type="black_and_white", paper="cream", page_count=300
+        )
+        self.assertEqual(odd.page_count, 300)
+        self.assert_close(odd.spine_width_in, even.spine_width_in, "299/300 KDP spine")
+        self.assert_close(odd.full_cover_width_in, even.full_cover_width_in, "299/300 KDP wrap")
 
     def test_standard_color_uses_white_stock_geometry(self) -> None:
         standard = calculate_kdp_cover_geometry(

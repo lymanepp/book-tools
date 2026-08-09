@@ -233,6 +233,12 @@ def calculate_kdp_cover_geometry(
     binding_t, paper_t, interior_t, trim_w, trim_h = _validate(
         binding, paper, page_count, trim_size, interior_type, reading_direction
     )
+
+    # KDP rounds an odd manuscript page count up to the next even number before
+    # calculating print/cover geometry.
+    if page_count % 2:
+        page_count += 1
+
     thickness = PAPER_THICKNESS[(interior_t, paper_t)]
     paper_stack_spine = page_count * thickness
 
