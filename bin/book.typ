@@ -7,8 +7,8 @@
 #let _native-heading = heading
 
 // Typography
-#let _body-font     = "TeX Gyre Pagella"
-#let _body-size     = 11pt
+#let _body-font     = "EB Garamond"
+#let _body-size     = 11.5pt
 #let _fn-size       = 9pt
 #let _hdr-size      = 9pt
 #let _ch-num-size   = 24pt
@@ -20,11 +20,14 @@
 #let _index-title-after = 10pt
 #let _index-entry-leading = 7.2pt
 #let _index-entry-gap = 4.2pt
-#let _hyphenate     = false
+#let _hyphenate     = true
+#let _number-type   = "lining"
+#let _font-fallback = false
 
 // Allow Typst to use tiny character-level adjustments while justifying text.
-// This reduces harsh word-spacing rivers when hyphenation is disabled, without
-// globally letterspacing all body text. Word-spacing limits remain Typst defaults.
+// Together with normal English hyphenation, this reduces harsh word-spacing
+// rivers without globally letterspacing all body text. Word-spacing limits
+// remain Typst defaults.
 #let _justification-limits = (
   tracking: (min: -0.003em, max: 0.008em),
 )
@@ -85,11 +88,27 @@
 #let _plain-par() = _noindent-par(justify: false)
 
 #let _reset-book-text(size: _body-size) = {
-  set text(font: _body-font, size: size, lang: "en", hyphenate: _hyphenate)
+  set text(
+    font: _body-font,
+    fallback: _font-fallback,
+    size: size,
+    lang: "en",
+    hyphenate: _hyphenate,
+    number-type: _number-type,
+  )
 }
 
 #let _book-text(body, size: _body-size, weight: "regular", style: "normal") = {
-  text(font: _body-font, size: size, weight: weight, style: style, lang: "en", hyphenate: _hyphenate)[#body]
+  text(
+    font: _body-font,
+    fallback: _font-fallback,
+    size: size,
+    weight: weight,
+    style: style,
+    lang: "en",
+    hyphenate: _hyphenate,
+    number-type: _number-type,
+  )[#body]
 }
 
 // Compact copyright-page colophon with a deliberate vertical position.
@@ -206,7 +225,17 @@
   set page(numbering: "1")
   counter(page).update(1)
 
-  _reset-book-text()
+  // Establish the book face and figure style at the document scope. In
+  // particular, force lining figures so 1/11 cannot resemble I/II, and do not
+  // silently substitute another serif when a requested glyph is unavailable.
+  set text(
+    font: _body-font,
+    fallback: _font-fallback,
+    size: _body-size,
+    lang: "en",
+    hyphenate: _hyphenate,
+    number-type: _number-type,
+  )
   _body-par()
 
   // Ordinary Markdown paragraphs are emitted by the Lua filter as book.para.
@@ -306,7 +335,7 @@
     v(_chapter-number-after)
   }
   {
-    set text(font: _body-font, size: _ch-title-size, weight: "bold")
+    set text(font: _body-font, size: _ch-title-size, weight: "bold", hyphenate: false)
     _plain-par()
     align(center)[#title]
   }
@@ -327,7 +356,7 @@
   _ch-title.update(title)
   v(_chapter-top-space)
   {
-    set text(font: _body-font, size: _ch-title-size, weight: "bold")
+    set text(font: _body-font, size: _ch-title-size, weight: "bold", hyphenate: false)
     _plain-par()
     align(center)[#title]
   }
@@ -470,7 +499,7 @@
   // Tighter than normal chapter openers; the index is back matter, not a main chapter.
   v(_index-top-space)
   {
-    set text(font: _body-font, size: _ch-title-size, weight: "bold")
+    set text(font: _body-font, size: _ch-title-size, weight: "bold", hyphenate: false)
     _plain-par()
     align(center)[#title]
   }

@@ -10,14 +10,16 @@ MODE="print"
 BUILD_DIR="$ROOT/build/$BOOK_NAME"
 LUA_FILTER="$BIN_DIR/typst-markup.lua"
 BOOK_TYP_SRC="$BIN_DIR/book.typ"
+FONT_SETUP="$BIN_DIR/ensure-print-fonts.sh"
 COMBINED_MD="$BUILD_DIR/$BOOK_NAME.combined.md"
 BODY_TYP="$BUILD_DIR/$BOOK_NAME.body.typ"
 GENERATED_TYP="$BUILD_DIR/$BOOK_NAME.typ"
 OUTPUT_PDF="$DIST_DIR/${BOOK_OUTPUT_BASENAME}-$MODE.pdf"
 BOOK_INFO_TYP="$BUILD_DIR/book-info.typ"
 
-require_files "$LUA_FILTER" "$BOOK_TYP_SRC"
+require_files "$LUA_FILTER" "$BOOK_TYP_SRC" "$FONT_SETUP"
 mkdir -p "$BUILD_DIR"
+FONT_DIR="$("$FONT_SETUP" "$ROOT")"
 
 # Escape strings for Typst string literals.
 typst_escape() {
@@ -124,7 +126,24 @@ BACK_MATTER_BUILD="$BUILD_DIR/back-matter-$MODE.typ"
 
 typst compile \
   --root "$ROOT" \
+  --font-path "$FONT_DIR" \
   "$GENERATED_TYP" \
   "$OUTPUT_PDF"
+
+# Guard against a regression to the legacy 12pt files or silent Libertinus
+# substitution. `pdffonts` is supplied by poppler-utils when available.
+if command -v pdffonts >/dev/null 2>&1; then
+  FONT_REPORT="$(pdffonts "$OUTPUT_PDF")"
+  if ! grep -q 'EBGaramond' <<<"$FONT_REPORT"; then
+    echo "ERROR: EB Garamond was not embedded in $OUTPUT_PDF" >&2
+    printf '%s\n' "$FONT_REPORT" >&2
+    exit 1
+  fi
+  if grep -Eq 'EBGaramond12|LibertinusSerif' <<<"$FONT_REPORT"; then
+    echo "ERROR: Legacy/fallback serif detected in $OUTPUT_PDF" >&2
+    printf '%s\n' "$FONT_REPORT" >&2
+    exit 1
+  fi
+fi
 
 echo "Built: $OUTPUT_PDF"
