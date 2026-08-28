@@ -20,14 +20,13 @@
 #let _index-title-after = 10pt
 #let _index-entry-leading = 7.2pt
 #let _index-entry-gap = 4.2pt
-#let _hyphenate     = true
+#let _hyphenate     = false
 #let _number-type   = "lining"
 #let _font-fallback = false
 
 // Allow Typst to use tiny character-level adjustments while justifying text.
-// Together with normal English hyphenation, this reduces harsh word-spacing
-// rivers without globally letterspacing all body text. Word-spacing limits
-// remain Typst defaults.
+// This reduces harsh word-spacing rivers when hyphenation is disabled, without
+// globally letterspacing all body text. Word-spacing limits remain Typst defaults.
 #let _justification-limits = (
   tracking: (min: -0.003em, max: 0.008em),
 )
@@ -335,7 +334,7 @@
     v(_chapter-number-after)
   }
   {
-    set text(font: _body-font, size: _ch-title-size, weight: "bold", hyphenate: false)
+    set text(font: _body-font, size: _ch-title-size, weight: "bold")
     _plain-par()
     align(center)[#title]
   }
@@ -356,7 +355,7 @@
   _ch-title.update(title)
   v(_chapter-top-space)
   {
-    set text(font: _body-font, size: _ch-title-size, weight: "bold", hyphenate: false)
+    set text(font: _body-font, size: _ch-title-size, weight: "bold")
     _plain-par()
     align(center)[#title]
   }
@@ -499,7 +498,7 @@
   // Tighter than normal chapter openers; the index is back matter, not a main chapter.
   v(_index-top-space)
   {
-    set text(font: _body-font, size: _ch-title-size, weight: "bold", hyphenate: false)
+    set text(font: _body-font, size: _ch-title-size, weight: "bold")
     _plain-par()
     align(center)[#title]
   }
