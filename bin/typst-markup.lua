@@ -28,6 +28,15 @@ local function raw_inline(s)
   return pandoc.RawInline("typst", s)
 end
 
+-- Pandoc's native Typst writer terminates inline code expressions with a
+-- semicolon. Generated RawInline expressions must do the same: otherwise a
+-- literal semicolon immediately following the expression in the Markdown is
+-- consumed by Typst as the expression terminator instead of being typeset.
+-- Example: `*is*;` must become `#book.emph[is];;`, not `#book.emph[is];`.
+local function typst_expr(s)
+  return s .. ";"
+end
+
 local function esc_attr(s)
   if s == nil then return "" end
   s = tostring(s)
@@ -46,6 +55,8 @@ local function esc_typst_text(s)
   s = s:gsub("\\", "\\\\")
   s = s:gsub("#", "\\#")
   s = s:gsub("@", "\\@")
+  s = s:gsub("<", "\\<")
+  s = s:gsub(">", "\\>")
   s = s:gsub("~", "\\~")
   s = s:gsub("%[", "\\[")
   s = s:gsub("%]", "\\]")
@@ -419,27 +430,27 @@ local function inline_to_typst(el)
   elseif el.t == "LineBreak" then
     -- Keep footnotes/list-produced raw Typst inline. Hard Markdown breaks are
     -- converted to an explicit Typst inline break, not a block paragraph.
-    return "#linebreak()"
+    return typst_expr("#linebreak()")
   elseif el.t == "Emph" then
-    return "#book.emph[" .. inlines_to_typst(el.content) .. "]"
+    return typst_expr("#book.emph[" .. inlines_to_typst(el.content) .. "]")
   elseif el.t == "Strong" then
-    return "#book.strong[" .. inlines_to_typst(el.content) .. "]"
+    return typst_expr("#book.strong[" .. inlines_to_typst(el.content) .. "]")
   elseif el.t == "Quoted" then
     local kind = el.quotetype == "SingleQuote" and "single" or "double"
-    return '#book.quoted(kind: "' .. kind .. '")[' .. inlines_to_typst(el.content) .. "]"
+    return typst_expr('#book.quoted(kind: "' .. kind .. '")[' .. inlines_to_typst(el.content) .. "]")
   elseif el.t == "Note" then
-    return "#footnote[" .. note_blocks_to_typst(el.content or {}) .. "]"
+    return typst_expr("#footnote[" .. note_blocks_to_typst(el.content or {}) .. "]")
   elseif el.t == "RawInline" and el.format == "html"
       and el.text:match("^%s*<!%-%-%s*pdf%-?br%s*%-%->%s*$") then
     -- PDF-only manual line-break control. In Markdown source, insert
     -- <!--pdfbr--> inside an epigraph where the print/PDF line should break.
     -- Pandoc drops or hides the HTML comment in non-PDF outputs; the audiobook
     -- scripts strip it explicitly.
-    return "#linebreak()"
+    return typst_expr("#linebreak()")
   elseif el.t == "RawInline" and el.format == "typst" then
     return el.text
   elseif el.t == "Code" then
-    return "#raw(\"" .. attr_to_typst_string(el.text) .. "\")"
+    return typst_expr("#raw(\"" .. attr_to_typst_string(el.text) .. "\")")
   elseif el.t == "Math" then
     return "$" .. el.text .. "$"
   elseif el.t == "Link" then
@@ -450,13 +461,13 @@ local function inline_to_typst(el)
   elseif el.t == "Span" then
     return inlines_to_typst(el.content or {})
   elseif el.t == "SmallCaps" then
-    return "#smallcaps[" .. inlines_to_typst(el.content or {}) .. "]"
+    return typst_expr("#smallcaps[" .. inlines_to_typst(el.content or {}) .. "]")
   elseif el.t == "Superscript" then
-    return "#super[" .. inlines_to_typst(el.content or {}) .. "]"
+    return typst_expr("#super[" .. inlines_to_typst(el.content or {}) .. "]")
   elseif el.t == "Subscript" then
-    return "#sub[" .. inlines_to_typst(el.content or {}) .. "]"
+    return typst_expr("#sub[" .. inlines_to_typst(el.content or {}) .. "]")
   elseif el.t == "Strikeout" then
-    return "#strike[" .. inlines_to_typst(el.content or {}) .. "]"
+    return typst_expr("#strike[" .. inlines_to_typst(el.content or {}) .. "]")
   else
     -- Fallback: stringify and escape. This loses unknown semantic markup, but
     -- remains Typst-safe and avoids reintroducing block wrappers in footnotes.
@@ -547,7 +558,7 @@ function Note(el)
   -- notes; that was the source of the earlier marker-on-separate-line bug.
   -- Also do not use stringify() for ordinary note text, because it discards
   -- Emph/Strong/Quoted and similar inline formatting.
-  return raw_inline("#footnote[" .. note_blocks_to_typst(el.content or {}) .. "]")
+  return raw_inline(typst_expr("#footnote[" .. note_blocks_to_typst(el.content or {}) .. "]"))
 end
 
 
@@ -651,16 +662,16 @@ function OrderedList(el)
 end
 
 function Emph(el)
-  return raw_inline("#book.emph[" .. inlines_to_typst(el.content or {}) .. "]")
+  return raw_inline(typst_expr("#book.emph[" .. inlines_to_typst(el.content or {}) .. "]"))
 end
 
 function Strong(el)
-  return raw_inline("#book.strong[" .. inlines_to_typst(el.content or {}) .. "]")
+  return raw_inline(typst_expr("#book.strong[" .. inlines_to_typst(el.content or {}) .. "]"))
 end
 
 function Quoted(el)
   local kind = "double"
   if el.quotetype == "SingleQuote" then kind = "single" end
-  return raw_inline('#book.quoted(kind: "' .. kind .. '")[' .. inlines_to_typst(el.content or {}) .. "]")
+  return raw_inline(typst_expr('#book.quoted(kind: "' .. kind .. '")[' .. inlines_to_typst(el.content or {}) .. "]"))
 end
 
