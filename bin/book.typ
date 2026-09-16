@@ -367,6 +367,64 @@
   _suppress.update(false)
 }
 
+// A major book division. Parts are unnumbered, receive a dedicated divider
+// page, and appear in the TOC without affecting the chapter counter.
+#let part(label: "", title: "", id: "") = {
+  _suppress.update(true)
+  if _chapter-open == "recto" {
+    pagebreak(weak: true, to: "odd")
+  } else {
+    pagebreak(weak: true)
+  }
+  context { _chapter_open_page.update(counter(page).get().first()) }
+  let full-title = if label == "" { title } else { label + " — " + title }
+  _ch-title.update(full-title)
+
+  v(_chapter-top-space + 24pt)
+  if label != "" {
+    {
+      set text(font: _body-font, size: 11pt, weight: "bold", hyphenate: false)
+      _plain-par()
+      align(center)[#label]
+    }
+    v(9pt)
+  }
+  {
+    set text(font: _body-font, size: 20pt, weight: "bold", hyphenate: false)
+    _plain-par()
+    align(center)[#title]
+  }
+
+  // Invisible structural heading for the TOC/bookmarks. No numbering means
+  // this entry does not participate in the chapter counter.
+  _native-heading(level: 2, bookmarked: false)[#full-title]
+  _suppress.update(false)
+}
+
+// An unnumbered body chapter, used for conclusions and similar closing
+// sections. It behaves like a normal chapter opener, including TOC/bookmark
+// and running-head behavior, but does not enter the chapter counter.
+#let conclusion(title: "Conclusion", id: "") = {
+  _suppress.update(true)
+  if _chapter-open == "recto" {
+    pagebreak(weak: true, to: "odd")
+  } else {
+    pagebreak(weak: true)
+  }
+  context { _chapter_open_page.update(counter(page).get().first()) }
+  _ch-title.update(title)
+
+  v(_chapter-top-space)
+  {
+    set text(font: _body-font, size: _ch-title-size, weight: "bold", hyphenate: false)
+    _plain-par()
+    align(center)[#title]
+  }
+  _native-heading(level: 1)[#title]
+  v(_chapter-title-after)
+  _suppress.update(false)
+}
+
 #let front_chapter(title: "", id: "") = {
   _suppress.update(true)
   pagebreak(weak: true, to: "odd")

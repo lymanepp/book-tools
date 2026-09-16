@@ -191,6 +191,21 @@ function Header(el)
   next_para_kind = "first"
 
   if el.level == 1 then
+    if has_class(el, "part") then
+      local label, t = title:match("^(Part%s+[%w]+)%s+—%s+(.+)$")
+      if not label then
+        label, t = title:match("^(Part%s+[%w]+)%s+%-%s+(.+)$")
+      end
+      if label and t then
+        return raw_block('#book.part(label: "' .. esc_attr(label) .. '", title: "' .. esc_attr(t) .. '", id: "' .. esc_attr(id) .. '")')
+      end
+      return raw_block('#book.part(title: "' .. esc_attr(title) .. '", id: "' .. esc_attr(id) .. '")')
+    end
+
+    if has_class(el, "conclusion") then
+      return raw_block('#book.conclusion(title: "' .. esc_attr(title) .. '", id: "' .. esc_attr(id) .. '")')
+    end
+
     local n, t = title:match("^(%d+)%.%s+(.+)$")
     if n then
       return raw_block('#book.chapter(number: "' .. esc_attr(n) .. '", title: "' .. esc_attr(t) .. '", id: "' .. esc_attr(id) .. '")')

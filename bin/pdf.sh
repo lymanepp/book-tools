@@ -97,14 +97,18 @@ typst_escape() {
 
 
 collect_chapters() {
-  find "$BOOK_DIR" -maxdepth 1 -type f -name '[0-9][0-9]-*.md' -printf '%f\n' | sort
+  # Numbered chapters are NN-*.md. Interstitial structural files such as
+  # Parts and the Conclusion may use a sortable letter suffix (NNa-*.md).
+  find "$BOOK_DIR" -maxdepth 1 -type f \
+    \( -name '[0-9][0-9]-*.md' -o -name '[0-9][0-9][a-z]-*.md' \) \
+    -printf '%f\n' | sort
 }
 
 : > "$COMBINED_MD"
 
 mapfile -t CHAPTERS < <(collect_chapters)
 if [[ "${#CHAPTERS[@]}" -eq 0 ]]; then
-  echo "No chapters found. Add numbered chapter files like 00-introduction.md." >&2
+  echo "No manuscript files found. Add files like 00-introduction.md (and optional interstitial NNa-*.md files)." >&2
   exit 1
 fi
 

@@ -46,10 +46,12 @@ collect_markdown_inputs() {
   result=("$front_matter")
   while IFS= read -r chapter; do
     result+=("$BOOK_DIR/$chapter")
-  done < <(find "$BOOK_DIR" -maxdepth 1 -type f -name '[0-9][0-9]-*.md' -printf '%f\n' | sort)
+  done < <(find "$BOOK_DIR" -maxdepth 1 -type f \
+    \( -name '[0-9][0-9]-*.md' -o -name '[0-9][0-9][a-z]-*.md' \) \
+    -printf '%f\n' | sort)
 
   [[ ${#result[@]} -gt 1 ]] || {
-    echo "ERROR: No chapter files found in $BOOK_DIR (expected NN-*.md)." >&2
+    echo "ERROR: No manuscript files found in $BOOK_DIR (expected NN-*.md or NNa-*.md)." >&2
     return 1
   }
 }

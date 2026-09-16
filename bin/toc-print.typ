@@ -30,14 +30,18 @@
     } else {
       it.element.body
     }
+    // Level-2 outline entries are reserved by book-tools for major Part
+    // dividers. Ordinary Markdown H2/H3 headings are rendered semantically
+    // by book.section/subsection and therefore never enter the native outline.
+    let styled-entry = if it.element.level == 2 { strong(entry) } else { entry }
     block(above: 0pt, below: 0pt,
       grid(columns: (1fr, auto), gutter: 0pt,
-        [#entry #box(width: 1fr, repeat[.])], [#h(4pt)#pg-fmt],
+        [#styled-entry #box(width: 1fr, repeat[.])], [#h(4pt)#pg-fmt],
       )
     )
     v(8.9pt)
   }
-  outline(title: none, indent: 0pt, depth: 1)
+  outline(title: none, indent: 0pt, depth: 2)
 }
 
 // ── Page 6: Blank verso before body ──────────────────────────────────────────
