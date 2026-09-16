@@ -44,13 +44,10 @@
   outline(title: none, indent: 0pt, depth: 2)
 }
 
-// ── Page 6: Blank verso before body ──────────────────────────────────────────
-#pagebreak(to: "even")
-#book._suppress.update(true)
-#book._chapter_open_page.update(0)
-
-// Body begins on next recto. Counter resets to 1 so the Introduction
-// is always page 1. No scheme change needed — Arabic throughout.
+// Body begins on the next recto. A single parity-aware break works whether
+// the TOC occupies one page or several; do not manufacture a fixed blank
+// verso first, because a two-page TOC would then create two blank pages.
 #pagebreak(to: "odd")
 #book._suppress.update(true)
+#book._chapter_open_page.update(0)
 #counter(page).update(1)
