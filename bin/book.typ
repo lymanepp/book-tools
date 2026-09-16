@@ -1,5 +1,5 @@
 // book.typ — What Scripture Says book template
-// Target: 6×9 print PDF, Typst
+// Target: per-book print geometry, Typst (defaults to 6×9)
 // Contract: Pandoc/Lua emits semantic structure; this file owns layout.
 
 #let _b-emph     = emph
@@ -20,7 +20,8 @@
 #let _index-title-after = 10pt
 #let _index-entry-leading = 7.2pt
 #let _index-entry-gap = 4.2pt
-#let _hyphenate     = false
+#let _hyphenate     = sys.inputs.at("book-hyphenate", default: "false") == "true"
+#let _chapter-open  = sys.inputs.at("book-chapter-open", default: "recto")
 #let _number-type   = "lining"
 #let _font-fallback = false
 
@@ -172,18 +173,27 @@
   }
 }
 
-#let setup(doc, title: "") = {
+#let setup(
+  doc,
+  title: "",
+  page_width: _page-width,
+  page_height: _page-height,
+  margin_top: _margin-top,
+  margin_bottom: _margin-bot,
+  margin_inside: _margin-in,
+  margin_outside: _margin-out,
+) = {
   let _effective-title = if title != "" { title } else { _book-title }
   set document(title: _effective-title)
 
   set page(
-    width: _page-width,
-    height: _page-height,
+    width: page_width,
+    height: page_height,
     margin: (
-      top: _margin-top,
-      bottom: _margin-bot,
-      inside: _margin-in,
-      outside: _margin-out,
+      top: margin_top,
+      bottom: margin_bottom,
+      inside: margin_inside,
+      outside: margin_outside,
     ),
     header-ascent: 28%,
     // Gives chapter-opening footnotes and the centered footer page number
@@ -318,7 +328,11 @@
   // Suppress the running header before the page break so the opening page
   // never inherits a stale "false" from the previous chapter's final page.
   _suppress.update(true)
-  pagebreak(weak: true, to: "odd")
+  if _chapter-open == "recto" {
+    pagebreak(weak: true, to: "odd")
+  } else {
+    pagebreak(weak: true)
+  }
   // Record the physical opening page for footer logic.
   context { _chapter_open_page.update(counter(page).get().first()) }
   // Running heads use the chapter title only, not the printed chapter number.

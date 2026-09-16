@@ -27,6 +27,8 @@ book.env fields used by this renderer
   BOOK_COVER_TEMPLATE         Optional; defaults to cover.html
   BOOK_COVER_PAPER            Optional; cream or white; defaults to cream for B&W, white for color interiors
   BOOK_COVER_INTERIOR_TYPE    Optional; black_and_white, standard_color, or premium_color; defaults to black_and_white
+  BOOK_PAGE_WIDTH              Optional trim width in inches; defaults to 6.0
+  BOOK_PAGE_HEIGHT             Optional trim height in inches; defaults to 9.0
   BOOK_COVER_SPINE_TEXT       Optional; auto, true, or false; defaults to auto
   BOOK_COVER_SPINE_TEXT_MIN_PAGES
                               Optional; defaults to 79 per KDP spine-text rule
@@ -77,7 +79,7 @@ KDP geometry
   Paper/interior thickness and cover-size formulas live in kdp_cover_geometry.py,
   which is unit-tested against KDP's cover-calculator output.
 
-  Default trim: 6.0 × 9.0 inches.
+  Default trim: 6.0 × 9.0 inches; override with BOOK_PAGE_WIDTH/BOOK_PAGE_HEIGHT.
 """
 
 import argparse
@@ -722,9 +724,29 @@ def px(inches: float) -> float:
     return round(inches * CSS_DPI, 1)
 
 
-def geo(pages: int, paper: str = "cream", binding: str = "paperback", interior_type: str = "black_and_white") -> dict:
+def trim_size_for_target(target: CoverTarget) -> tuple[float, float]:
+    """Return per-book trim size, preserving the historical 6×9 default."""
+    cfg = load_env(target.env_path)
+    width = optional_float(cfg.get("BOOK_PAGE_WIDTH"), "BOOK_PAGE_WIDTH", target.env_path) or 6.0
+    height = optional_float(cfg.get("BOOK_PAGE_HEIGHT"), "BOOK_PAGE_HEIGHT", target.env_path) or 9.0
+    return width, height
+
+
+def geo(
+    pages: int,
+    paper: str = "cream",
+    binding: str = "paperback",
+    interior_type: str = "black_and_white",
+    trim_size: tuple[float, float] = (6.0, 9.0),
+) -> dict:
     """Return geometry tokens for paperback or hardcover KDP cover rendering."""
-    return cover_geometry_tokens(pages=pages, paper=paper, binding=binding, interior_type=interior_type)
+    return cover_geometry_tokens(
+        pages=pages,
+        paper=paper,
+        binding=binding,
+        interior_type=interior_type,
+        trim_size=trim_size,
+    )
 
 
 def inject_tokens(html: str, geometry: dict, target: CoverTarget) -> str:
@@ -782,7 +804,8 @@ def resolve_pages(target: CoverTarget, args: argparse.Namespace, workspace: Path
 def render(target: CoverTarget, pages: int, paper: str, interior_type: str, binding: str, preview: bool,
            outdir: str | Path, workspace: Path, requested_renderer: str) -> None:
     try:
-        g = geo(pages, paper, binding, interior_type)
+        trim_size = trim_size_for_target(target)
+        g = geo(pages, paper, binding, interior_type, trim_size)
     except ValueError as e:
         sys.exit(str(e))
     spine_cfg = resolve_spine_text_config(target, pages, g)
@@ -833,6 +856,7 @@ def render(target: CoverTarget, pages: int, paper: str, interior_type: str, bind
     print(f"Spine text: {spine_cfg.status}  (policy={spine_cfg.policy}, min_pages={spine_cfg.min_pages}, edge_margin={spine_cfg.safe_margin_in:.3f}in)")
     if spine_cfg.show:
         print(f"Spine type: title={spine_cfg.title_font_px}px  series={spine_cfg.series_font_px}px  author={spine_cfg.author_font_px}px")
+    print(f"Trim:    {trim_size[0]:.4f}\" × {trim_size[1]:.4f}\"")
     print(f"Wrap:    {g['total_w_in']:.4f}\" × {g['total_h_in']:.4f}\"")
     print(f"CSS px:  {g['TOTAL_W']} × {g['TOTAL_H']}")
     print(f"Zones:   back x={g['BACK_LEFT']}  spine x={g['SPINE_LEFT']}  front x={g['FRONT_LEFT']}")

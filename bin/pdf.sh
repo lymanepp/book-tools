@@ -21,6 +21,55 @@ require_files "$LUA_FILTER" "$BOOK_TYP_SRC" "$FONT_SETUP"
 mkdir -p "$BUILD_DIR"
 FONT_DIR="$("$FONT_SETUP" "$ROOT")"
 
+# Optional per-book print geometry. These defaults are the historical book-tools
+# 6×9 layout, so existing books remain byte-for-layout compatible unless a book
+# explicitly opts into different trim or margins in book.env.
+: "${BOOK_PAGE_WIDTH:=6}"
+: "${BOOK_PAGE_HEIGHT:=9}"
+: "${BOOK_MARGIN_TOP:=0.70}"
+: "${BOOK_MARGIN_BOTTOM:=0.62}"
+: "${BOOK_MARGIN_INNER:=0.95}"
+: "${BOOK_MARGIN_OUTER:=0.575}"
+: "${BOOK_HYPHENATE:=false}"
+: "${BOOK_CHAPTER_OPEN:=recto}"
+: "${BOOK_MIN_PRINT_PAGES:=}"
+
+require_positive_number() {
+  local name="$1" value="$2"
+  if [[ ! "$value" =~ ^([0-9]+([.][0-9]*)?|[.][0-9]+)$ ]] \
+      || ! awk -v n="$value" 'BEGIN { exit !(n > 0) }'; then
+    echo "ERROR: $BOOK_ENV must define $name as a positive number of inches, got: $value" >&2
+    exit 1
+  fi
+}
+
+for geometry_var in \
+  BOOK_PAGE_WIDTH BOOK_PAGE_HEIGHT BOOK_MARGIN_TOP BOOK_MARGIN_BOTTOM \
+  BOOK_MARGIN_INNER BOOK_MARGIN_OUTER; do
+  require_positive_number "$geometry_var" "${!geometry_var}"
+done
+
+case "$BOOK_HYPHENATE" in
+  true|false) ;;
+  *)
+    echo "ERROR: $BOOK_ENV must define BOOK_HYPHENATE as true or false, got: $BOOK_HYPHENATE" >&2
+    exit 1
+    ;;
+esac
+
+case "$BOOK_CHAPTER_OPEN" in
+  recto|next) ;;
+  *)
+    echo "ERROR: $BOOK_ENV must define BOOK_CHAPTER_OPEN as recto or next, got: $BOOK_CHAPTER_OPEN" >&2
+    exit 1
+    ;;
+esac
+
+if [[ -n "$BOOK_MIN_PRINT_PAGES" && ! "$BOOK_MIN_PRINT_PAGES" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ERROR: $BOOK_ENV must define BOOK_MIN_PRINT_PAGES as a positive integer, got: $BOOK_MIN_PRINT_PAGES" >&2
+  exit 1
+fi
+
 # Escape strings for Typst string literals.
 typst_escape() {
   local s="${1-}"
@@ -89,7 +138,15 @@ BACK_MATTER_BUILD="$BUILD_DIR/back-matter-$MODE.typ"
 
 {
   printf '#import "book.typ" as book\n'
-  printf '#show: book.setup.with(title: "%s")\n\n' "$(typst_escape "$BOOK_TITLE")"
+  printf '#show: book.setup.with(\n'
+  printf '  title: "%s",\n' "$(typst_escape "$BOOK_TITLE")"
+  printf '  page_width: %sin,\n' "$BOOK_PAGE_WIDTH"
+  printf '  page_height: %sin,\n' "$BOOK_PAGE_HEIGHT"
+  printf '  margin_top: %sin,\n' "$BOOK_MARGIN_TOP"
+  printf '  margin_bottom: %sin,\n' "$BOOK_MARGIN_BOTTOM"
+  printf '  margin_inside: %sin,\n' "$BOOK_MARGIN_INNER"
+  printf '  margin_outside: %sin,\n' "$BOOK_MARGIN_OUTER"
+  printf ')\n\n'
 
   if [[ -f "$FRONT_MATTER_SRC" ]]; then
     cp "$FRONT_MATTER_SRC" "$FRONT_MATTER_BUILD"
@@ -127,8 +184,27 @@ BACK_MATTER_BUILD="$BUILD_DIR/back-matter-$MODE.typ"
 typst compile \
   --root "$ROOT" \
   --font-path "$FONT_DIR" \
+  --input "book-hyphenate=$BOOK_HYPHENATE" \
+  --input "book-chapter-open=$BOOK_CHAPTER_OPEN" \
   "$GENERATED_TYP" \
   "$OUTPUT_PDF"
+
+if [[ -n "$BOOK_MIN_PRINT_PAGES" ]]; then
+  if command -v pdfinfo >/dev/null 2>&1; then
+    ACTUAL_PRINT_PAGES="$(pdfinfo "$OUTPUT_PDF" | awk '/^Pages:/ { print $2; exit }')"
+    if [[ ! "$ACTUAL_PRINT_PAGES" =~ ^[0-9]+$ ]]; then
+      echo "ERROR: Could not determine page count for $OUTPUT_PDF" >&2
+      exit 1
+    fi
+    if (( ACTUAL_PRINT_PAGES < BOOK_MIN_PRINT_PAGES )); then
+      echo "ERROR: $OUTPUT_PDF has $ACTUAL_PRINT_PAGES pages; minimum configured print page count is $BOOK_MIN_PRINT_PAGES" >&2
+      exit 1
+    fi
+    echo "Print page count: $ACTUAL_PRINT_PAGES (minimum $BOOK_MIN_PRINT_PAGES)"
+  else
+    echo "WARNING: pdfinfo unavailable; cannot verify BOOK_MIN_PRINT_PAGES=$BOOK_MIN_PRINT_PAGES" >&2
+  fi
+fi
 
 # Guard against a regression to the legacy 12pt files or silent Libertinus
 # substitution. `pdffonts` is supplied by poppler-utils when available.
