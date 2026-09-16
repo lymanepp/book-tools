@@ -135,9 +135,14 @@
   // about 1.7 inches from the physical top of a 6×9 page.
   v(1.0in)
 
-  _b-strong(title)
-  linebreak()
-  _b-emph(subtitle)
+  // Display metadata should wrap only between words. Never hyphenate a
+  // book title or subtitle merely to improve line fit.
+  {
+    set text(hyphenate: false)
+    _b-strong(title)
+    linebreak()
+    _b-emph(subtitle)
+  }
 
   v(22pt)
   [© #year #author]
@@ -206,7 +211,7 @@
       // so the opening page reliably sees it as true. It is cleared to false
       // after the chapter title content, so subsequent pages get their header.
       if _suppress.at(here()) { [] } else {
-        set text(font: _body-font, size: _hdr-size)
+        set text(font: _body-font, size: _hdr-size, hyphenate: false)
         _plain-par()
         if calc.even(pg) {
           // Even (left-hand) pages: page number on the outside/left edge.
@@ -348,7 +353,7 @@
     v(_chapter-number-after)
   }
   {
-    set text(font: _body-font, size: _ch-title-size, weight: "bold")
+    set text(font: _body-font, size: _ch-title-size, weight: "bold", hyphenate: false)
     _plain-par()
     align(center)[#title]
   }
@@ -369,7 +374,7 @@
   _ch-title.update(title)
   v(_chapter-top-space)
   {
-    set text(font: _body-font, size: _ch-title-size, weight: "bold")
+    set text(font: _body-font, size: _ch-title-size, weight: "bold", hyphenate: false)
     _plain-par()
     align(center)[#title]
   }
@@ -383,7 +388,7 @@
 #let _kept-heading(title, size: _body-size, italic: false, before: 12pt, after: 5pt) = {
   v(before, weak: true)
   block(breakable: false, sticky: true)[
-    #set text(font: _body-font, size: size, weight: "bold", style: if italic { "italic" } else { "normal" })
+    #set text(font: _body-font, size: size, weight: "bold", style: if italic { "italic" } else { "normal" }, hyphenate: false)
     #set par(justify: false, first-line-indent: (amount: 0pt, all: true), spacing: 0pt)
     #title
     #v(after, weak: true)
@@ -512,7 +517,7 @@
   // Tighter than normal chapter openers; the index is back matter, not a main chapter.
   v(_index-top-space)
   {
-    set text(font: _body-font, size: _ch-title-size, weight: "bold")
+    set text(font: _body-font, size: _ch-title-size, weight: "bold", hyphenate: false)
     _plain-par()
     align(center)[#title]
   }
@@ -531,7 +536,7 @@
   if title != "" {
     v(10pt, weak: true)
     block(breakable: false, sticky: true)[
-      #set text(font: _body-font, size: _h2-size, weight: "bold")
+      #set text(font: _body-font, size: _h2-size, weight: "bold", hyphenate: false)
       #set par(justify: false, leading: _leading, spacing: 0pt,
         first-line-indent: (amount: 0pt, all: true), hanging-indent: 0pt)
       #title
@@ -569,6 +574,9 @@
 // ── Inline wrappers ──────────────────────────────────────────────────────────
 #let emph(body)      = _b-emph[#body]
 #let strong(body)    = _b-strong[#body]
+// Keep deliberately marked words intact on one line. Useful for avoiding
+// an automatic hyphen at a page boundary without disabling body hyphenation.
+#let nohyphen(body) = box[#body]
 #let quoted(body, kind: "double") = {
   if kind == "single" { ['#body'] } else { ["#body"] }
 }

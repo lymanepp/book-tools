@@ -167,6 +167,13 @@ function Pandoc(doc)
   return doc
 end
 
+function Span(el)
+  if has_class(el, "nohyphen") then
+    return inlines_between("#book.nohyphen[", el.content or {}, "]")
+  end
+  return nil
+end
+
 function RawBlock(el)
   previous_block_was_quote = false
   if el.format == "tex" then
