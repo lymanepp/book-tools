@@ -29,7 +29,7 @@ VERSION="$2"
 AUTO_YES="${3:-}"
 BOOK_ENV="$BOOK/book.env"
 
-[[ "$BOOK" == "book1" || "$BOOK" == "book2" ]] || die "Book must be book1 or book2."
+[[ "$BOOK" == "book1" || "$BOOK" == "book2" || "$BOOK" == "book3" ]] || die "Book must be book1, book2 or book3."
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "Version must be MAJOR.MINOR.PATCH."
 [[ -z "$AUTO_YES" || "$AUTO_YES" == "--yes" ]] || die "Unknown option: $AUTO_YES"
 [[ -x tools/bin/build-book.py && -f "$BOOK_ENV" ]] || die "Run this from the repository root."
