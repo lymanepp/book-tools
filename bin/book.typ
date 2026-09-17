@@ -371,11 +371,9 @@
 // page, and appear in the TOC without affecting the chapter counter.
 #let part(label: "", title: "", id: "") = {
   _suppress.update(true)
-  if _chapter-open == "recto" {
-    pagebreak(weak: true, to: "odd")
-  } else {
-    pagebreak(weak: true)
-  }
+  // Parts are major divider pages and always open on a recto, even when
+  // ordinary chapters are configured to open on the next available page.
+  pagebreak(weak: true, to: "odd")
   context { _chapter_open_page.update(counter(page).get().first()) }
   let full-title = if label == "" { title } else { label + " — " + title }
   _ch-title.update(full-title)
