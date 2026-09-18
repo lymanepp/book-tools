@@ -9,12 +9,18 @@
 #book._chapter_open_page.update(0)
 
 #v(39.4pt)
+
+// Put the bookmark target immediately before the visible TOC title so PDF
+// navigation lands on the heading rather than below it.
+#book._native-heading(level: 1, outlined: false, bookmarked: true)[Table of Contents]
+
 #{
   set text(font: book._body-font, size: 16pt, weight: "bold")
   set par(justify: false, leading: book._leading, spacing: 0pt,
           first-line-indent: (amount: 0pt, all: true))
   align(center)[Table of Contents]
 }
+
 #v(28.3pt)
 #{
   set text(font: book._body-font, size: book._body-size)
@@ -34,11 +40,13 @@
     // dividers. Ordinary Markdown H2/H3 headings are rendered semantically
     // by book.section/subsection and therefore never enter the native outline.
     let styled-entry = if it.element.level == 2 { strong(entry) } else { entry }
-    block(above: 0pt, below: 0pt,
-      grid(columns: (1fr, auto), gutter: 0pt,
-        [#styled-entry #box(width: 1fr, repeat[.])], [#h(4pt)#pg-fmt],
+    link(eloc)[
+      #block(above: 0pt, below: 0pt,
+        grid(columns: (1fr, auto), gutter: 0pt,
+          [#styled-entry #box(width: 1fr, repeat[.])], [#h(4pt)#pg-fmt],
+        )
       )
-    )
+    ]
     v(8.9pt)
   }
   outline(title: none, indent: 0pt, depth: 2)
