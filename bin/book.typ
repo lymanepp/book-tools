@@ -42,7 +42,7 @@
 
 // Vertical rhythm and indents
 #let _leading        = 6.6pt
-#let _para-spacing   = 0pt
+#let _para-spacing   = _leading  // indented paragraphs: same vertical rhythm as an ordinary line break
 #let _indent         = 0.25in
 #let _quote-indent   = 0.375in
 #let _quote-before   = 4.5pt
@@ -269,16 +269,10 @@
         justify: true,
         justification-limits: _justification-limits,
         leading: _leading,
-        spacing: 0pt,
+        spacing: _leading * 2,
         first-line-indent: (amount: 0pt, all: true),
         hanging-indent: 0pt,
       )
-      // book.para() wraps each paragraph in a block(); set block spacing so
-      // that multi-paragraph list items have proper inter-paragraph breathing
-      // room. This does not affect the item-to-item spacing (controlled by
-      // set list/enum above) because those gaps are measured between items,
-      // not between blocks inside an item.
-      #set block(spacing: _leading * 2)
       #_book-text(it)
     ]
     v(_list-after, weak: true)
@@ -291,12 +285,10 @@
         justify: true,
         justification-limits: _justification-limits,
         leading: _leading,
-        spacing: 0pt,
+        spacing: _leading * 2,
         first-line-indent: (amount: 0pt, all: true),
         hanging-indent: 0pt,
       )
-      // Same fix as show list above.
-      #set block(spacing: _leading * 2)
       #_book-text(it)
     ]
     v(_list-after, weak: true)
@@ -371,11 +363,9 @@
 // page, and appear in the TOC without affecting the chapter counter.
 #let part(label: "", title: "", id: "") = {
   _suppress.update(true)
-  if _chapter-open == "recto" {
-    pagebreak(weak: true, to: "odd")
-  } else {
-    pagebreak(weak: true)
-  }
+  // Parts are major divider pages and always open on a recto, even when
+  // ordinary chapters are configured to open on the next available page.
+  pagebreak(weak: true, to: "odd")
   context { _chapter_open_page.update(counter(page).get().first()) }
   let full-title = if label == "" { title } else { label + " — " + title }
   _ch-title.update(full-title)
@@ -549,16 +539,18 @@
 
 // ── Explicit paragraph wrapper ──────────────────────────────────────────────
 #let para(body, kind: "normal") = {
-  block(width: 100%)[
-    #_reset-book-text()
-    #set par(
-      justify: true,
-      justification-limits: _justification-limits,
-      leading: _leading,
-      spacing: 0pt,
-      first-line-indent: (amount: 0pt, all: true),
-      hanging-indent: 0pt,
-    )
+  // Emit a real Typst paragraph instead of simulating paragraphs with blocks.
+  // Body paragraph spacing is one leading, so an indented paragraph starts on
+  // the same vertical rhythm as the next ordinary line: no blank gap and no
+  // overlap. Omitting `spacing` here also lets list contexts override it.
+  _reset-book-text()
+  par(
+    justify: true,
+    justification-limits: _justification-limits,
+    leading: _leading,
+    first-line-indent: (amount: 0pt, all: true),
+    hanging-indent: 0pt,
+  )[
     #if kind == "normal" { h(_indent) }
     #_book-text(body)
   ]

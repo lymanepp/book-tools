@@ -1,0 +1,5 @@
+# Optional dependencies for local proof-listening audio generation.
+# Kept separate from requirements-build.txt so normal publication builds do
+# not install PyTorch or other ML dependencies.
+kokoro==0.9.4
+soundfile>=0.13,<0.14

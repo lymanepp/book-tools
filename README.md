@@ -244,3 +244,60 @@ available for intra-chapter plain page breaks if ever needed.
 Bare `>` blockquotes in Scripture chapters land in `Block Text` (shaded,
 left border, italic). If you want them in `Scripture Quote` style instead,
 wrap with the fenced div. If the current rendering is acceptable, no change.
+
+## Local proof-listening audio with Kokoro
+
+`build-audiobook-kokoro.py` creates a free, local proof-listening edition with
+Kokoro-82M. It is intentionally separate from the release/publication pipeline:
+the heavy ML dependencies are optional and generated audio is written beneath
+ignored `build/` and `dist/` directories.
+
+Install the optional toolchain once (Debian/Ubuntu or the project devcontainer):
+
+```bash
+bash tools/bin/setup-audio-kokoro.sh
+```
+
+That installs the separate `tools/requirements-audio-kokoro.txt` plus `espeak-ng`
+(Kokoro's English out-of-dictionary fallback) and `ffmpeg` (M4A/AAC or MP3 encoding).
+These dependencies are deliberately *not* part of the normal publication
+build, so PDF/DOCX/EPUB CI remains lean.
+
+Preview exactly what will be narrated without loading the model:
+
+```bash
+python3 tools/bin/build-audiobook-kokoro.py book1 --dry-run
+```
+
+Render just the introduction while auditioning a voice:
+
+```bash
+python3 tools/bin/build-audiobook-kokoro.py book1 --chapters 00 --voice af_heart
+```
+
+Render the complete proof-listening edition:
+
+```bash
+python3 tools/bin/build-audiobook-kokoro.py book1 --threads 8
+```
+
+Final M4A files (or MP3s if selected) are written to `dist/<book>-audio-proof/`. Clean narration text,
+per-chapter manifests, and a content-addressed WAV cache are kept in
+`build/audiobook-kokoro/<book>/`. Re-running after manuscript edits regenerates
+only audio chunks whose text or Kokoro settings changed. The default is 96 kbps
+AAC-LC in an M4A container; use `--format mp3` for 128 kbps MP3 compatibility.
+
+Per-book defaults may be set in `book.env`:
+
+```bash
+BOOK_AUDIO_KOKORO_VOICE='af_heart'
+BOOK_AUDIO_KOKORO_SPEED=1.0
+BOOK_AUDIO_KOKORO_CHUNK_CHARS=900
+BOOK_AUDIO_KOKORO_FORMAT='m4a'
+BOOK_AUDIO_KOKORO_AAC_BITRATE='96k'
+BOOK_AUDIO_KOKORO_MP3_BITRATE='128k'
+```
+
+The released Kokoro 0.9.4 package on PyPI requires Python 3.10 through 3.12.
+The project devcontainer is therefore pinned to Python 3.12. The model is
+downloaded automatically on first use.

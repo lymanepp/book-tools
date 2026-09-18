@@ -186,6 +186,7 @@ BACK_MATTER_BUILD="$BUILD_DIR/back-matter-$MODE.typ"
 } > "$GENERATED_TYP"
 
 typst compile \
+  --pdf-standard 1.5 \
   --root "$ROOT" \
   --font-path "$FONT_DIR" \
   --input "book-hyphenate=$BOOK_HYPHENATE" \
