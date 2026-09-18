@@ -344,15 +344,17 @@
     }
     v(_chapter-number-after)
   }
+
+  // Put the invisible outline/bookmark target immediately before the visible
+  // chapter title. PDF navigation therefore lands on the title instead of the
+  // first paragraph below it. numbering lets outline.entry render "N. Title".
+  _native-heading(level: 1, numbering: "1.")[#title]
+
   {
     set text(font: _body-font, size: _ch-title-size, weight: "bold", hyphenate: false)
     _plain-par()
     align(center)[#title]
   }
-  // Emit an invisible level-1 heading so outline() can build the TOC.
-  // numbering is set so outline.entry can render "N.   Title" format.
-  // The show heading: none rule in setup() suppresses visual rendering.
-  _native-heading(level: 1, numbering: "1.")[#title]
 
   v(_chapter-title-after)
   // Clear suppression so the second page of each chapter gets its running head.
@@ -371,6 +373,14 @@
   _ch-title.update(full-title)
 
   v(_chapter-top-space + 24pt)
+
+  // Put both Part navigation targets before the visible Part heading so TOC
+  // links and PDF bookmarks land on the divider title rather than below it.
+  // The level-2 heading feeds the printed TOC but not the PDF bookmarks.
+  _native-heading(level: 2, bookmarked: false)[#full-title]
+  // The level-1 heading is bookmark-only so Parts remain peers of chapters.
+  _native-heading(level: 1, outlined: false, bookmarked: true)[#full-title]
+
   if label != "" {
     {
       set text(font: _body-font, size: 11pt, weight: "bold", hyphenate: false)
@@ -384,10 +394,6 @@
     _plain-par()
     align(center)[#title]
   }
-
-  // Invisible structural heading for the TOC/bookmarks. No numbering means
-  // this entry does not participate in the chapter counter.
-  _native-heading(level: 2, bookmarked: false)[#full-title]
   _suppress.update(false)
 }
 
@@ -405,12 +411,12 @@
   _ch-title.update(title)
 
   v(_chapter-top-space)
+  _native-heading(level: 1)[#title]
   {
     set text(font: _body-font, size: _ch-title-size, weight: "bold", hyphenate: false)
     _plain-par()
     align(center)[#title]
   }
-  _native-heading(level: 1)[#title]
   v(_chapter-title-after)
   _suppress.update(false)
 }
@@ -421,12 +427,12 @@
   context { _chapter_open_page.update(counter(page).get().first()) }
   _ch-title.update(title)
   v(_chapter-top-space)
+  _native-heading(level: 1)[#title]
   {
     set text(font: _body-font, size: _ch-title-size, weight: "bold", hyphenate: false)
     _plain-par()
     align(center)[#title]
   }
-  _native-heading(level: 1)[#title]
   v(_chapter-title-after)
   _suppress.update(false)
 }
